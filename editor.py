@@ -22,7 +22,7 @@ def check_tf_cuda():
 check_torch_cuda()
 check_tf_cuda()
 
-video_path = "inputvids/kylejesse_edit1.mp4"
+video_path = "inputvids/rhettandlink_edit1.mp4"
 
 # Diarize audio
 speaker_segments = diarize(video_path, n_speakers=2)

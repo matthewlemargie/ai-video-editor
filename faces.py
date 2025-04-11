@@ -1,10 +1,10 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-from deepface import DeepFace
-from deepface.DeepFace import build_model
+from facenet_pytorch import InceptionResnetV1, MTCNN
 from sklearn.metrics.pairwise import cosine_similarity
 import uuid
+import torch
 import os
 import threading
 from time import time
@@ -18,10 +18,7 @@ face_id_counter_mutex = threading.Lock()
 def generate_id():
     return str(uuid.uuid4())[:8]
 
-def process_frames(video, face_db, example_faces, model_name, model, threshold, max_num_faces):
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=max_num_faces,
-                                       min_detection_confidence=0.1, min_tracking_confidence=0.5)
+def process_frames(video, face_db, face_mesh, example_faces, model, threshold):
     for i in tqdm(range(len(video)), desc="Processing frames", unit="frame"):
         rgb_frame = cv2.cvtColor(video[i], cv2.COLOR_BGR2RGB)
         result = face_mesh.process(rgb_frame)
@@ -43,30 +40,32 @@ def process_frames(video, face_db, example_faces, model_name, model, threshold, 
 
                 face_crop = video[i][y_min:y_max, x_min:x_max]
 
-                scale_percent = 75  # Resize to 50% of original size
-                width = int(face_crop.shape[1] * scale_percent / 100)
-                height = int(face_crop.shape[0] * scale_percent / 100)
-                dim = (width, height)
+                dim = (224, 224)
 
                 face_crop = cv2.resize(face_crop, dim, interpolation=cv2.INTER_AREA)
+                face_crop_tensor = torch.from_numpy(face_crop).permute(2, 0, 1).float()  # Convert to (C, H, W)
+                face_crop_tensor = face_crop_tensor.unsqueeze(0).to('cuda' if torch.cuda.is_available() else 'cpu')  # Add batch dimension
+
+                # Normalize the face image to the range [-1, 1]
+                face_crop_tensor = (face_crop_tensor / 255.0 - 0.5) * 2.0
 
                 try:
-                    # Get embedding from DeepFace
-                    t = time()
-                    embedding_obj = DeepFace.represent(img_path=face_crop, model_name=model_name, model=model, enforce_detection=False)
-                    print(time() - t)
-                    embedding = embedding_obj[0]['embedding']
+                    # Get the embedding for the face crop
+                    with torch.no_grad():
+                        embedding = model(face_crop_tensor)
+
+                    # Convert to numpy array and append to the list
+                    embedding = embedding.cpu().numpy()
                 except:
                     print("failed")
                     continue  # Skip if embedding failed
 
                 matched_id = None
-                with face_db_mutex:
-                    for face_id, (prev_embedding, _) in face_db.items():
-                        sim = cosine_similarity([embedding], [prev_embedding])[0][0]
-                        if sim > threshold:
-                            matched_id = face_id
-                            break
+                for face_id, (prev_embedding, _) in face_db.items():
+                    sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
+                    if sim > threshold:
+                        matched_id = face_id
+                        break
 
                 if matched_id is None:
                     matched_id = generate_id()
@@ -97,15 +96,7 @@ def create_face_ids(video_path, max_num_faces):
     # Setup
     threshold = 0.5  # Cosine similarity threshold for identity matching
     model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
-    model = build_model(model_name)
-    from PIL import Image
-
-    img = np.ones((160,160,3), dtype=np.uint8) * 255  # White square
-    embedding_obj = DeepFace.represent(img_path=img, model_name=model_name, enforce_detection=False, detector_backend='mediapipe')
-    if embedding_obj:
-        print(embedding_obj)
-    else:
-        print("dudredrdurdurd")
+    model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize MediaPipe Face Mesh
     mp_face_mesh = mp.solutions.face_mesh
@@ -117,7 +108,6 @@ def create_face_ids(video_path, max_num_faces):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # Get total number of frames for progress bar
 
     # Track embeddings + IDs
-    face_id_counter = 0
     face_db = {}  # Stores {face_id: (embedding, bbox)}
     example_faces = {}
 
@@ -130,7 +120,7 @@ def create_face_ids(video_path, max_num_faces):
         video.append(frame) 
     cap.release()
 
-    process_frames(video, face_db, example_faces, model_name, model, threshold, max_num_faces)
+    process_frames(video, face_db, face_mesh, example_faces, model, threshold)
 
     cv2.destroyAllWindows()
 

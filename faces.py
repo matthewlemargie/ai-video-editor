@@ -6,24 +6,41 @@ from sklearn.metrics.pairwise import cosine_similarity
 import uuid
 import torch
 import os
-import threading
 from time import time
 from tqdm import tqdm
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disables CUDA for TensorFlow
 
-face_db_mutex = threading.Lock()
-face_id_counter_mutex = threading.Lock()
-
 def generate_id():
     return str(uuid.uuid4())[:8]
 
-def process_frames(video, face_db, face_mesh, example_faces, model, threshold):
-    for i in tqdm(range(len(video)), desc="Processing frames", unit="frame"):
-        rgb_frame = cv2.cvtColor(video[i], cv2.COLOR_BGR2RGB)
+def create_face_ids(video_path, max_num_faces):
+    # Setup
+    threshold = 0.5  # Cosine similarity threshold for identity matching
+    model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
+    model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Initialize MediaPipe Face Mesh
+    mp_face_mesh = mp.solutions.face_mesh
+    face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=max_num_faces,
+                                       min_detection_confidence=0.1, min_tracking_confidence=0.5)
+
+    # Video input
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # Get total number of frames for progress bar
+
+    # Track embeddings + IDs
+    face_db = {}  # Stores {face_id: (embedding, bbox)}
+    example_faces = {}
+
+    for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = face_mesh.process(rgb_frame)
 
-        h, w, _ = video[i].shape
+        h, w, _ = frame.shape
         current_faces = []
 
         if result.multi_face_landmarks:
@@ -38,7 +55,7 @@ def process_frames(video, face_db, face_mesh, example_faces, model, threshold):
                 x_min, y_min = max(0, x_min - pad), max(0, y_min - pad)
                 x_max, y_max = min(w, x_max + pad), min(h, y_max + pad)
 
-                face_crop = video[i][y_min:y_max, x_min:x_max]
+                face_crop = frame[y_min:y_max, x_min:x_max]
 
                 dim = (224, 224)
 
@@ -72,56 +89,25 @@ def process_frames(video, face_db, face_mesh, example_faces, model, threshold):
 
                 x_avg = (x_max + x_min) / 2
                 y_avg = (y_max + y_min) / 2
-                with face_db_mutex:
-                # Save to database
-                    if matched_id in face_db:
-                        curr_count = face_db[matched_id][1][0]
-                        x_avg_count = face_db[matched_id][1][1]
-                        y_avg_count = face_db[matched_id][1][2]
-                        face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg))
-                    else:
-                        face_db[matched_id] = (embedding, (1, x_avg, y_avg))
-                        example_faces[matched_id] = face_crop
+                if matched_id in face_db:
+                    curr_count = face_db[matched_id][1][0]
+                    x_avg_count = face_db[matched_id][1][1]
+                    y_avg_count = face_db[matched_id][1][2]
+                    face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg))
+                else:
+                    face_db[matched_id] = (embedding, (1, x_avg, y_avg))
+                    example_faces[matched_id] = face_crop
                 
                 # Draw box + ID
-                cv2.rectangle(video[i], (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.putText(video[i], f"ID: {matched_id}", (x_min, y_min - 10),
+                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        cv2.imshow("MediaPipe + DeepFace", video[i])
+        cv2.imshow("MediaPipe + DeepFace", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-def create_face_ids(video_path, max_num_faces):
-    # Setup
-    threshold = 0.5  # Cosine similarity threshold for identity matching
-    model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
-    model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Initialize MediaPipe Face Mesh
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=max_num_faces,
-                                       min_detection_confidence=0.1, min_tracking_confidence=0.5)
-
-    # Video input
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # Get total number of frames for progress bar
-
-    # Track embeddings + IDs
-    face_db = {}  # Stores {face_id: (embedding, bbox)}
-    example_faces = {}
-
-    #Read in all frames
-    video = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        video.append(frame) 
     cap.release()
-
-    process_frames(video, face_db, face_mesh, example_faces, model, threshold)
-
     cv2.destroyAllWindows()
 
     for k, v in face_db.items():

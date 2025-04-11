@@ -1,0 +1,17 @@
+name: video-editor-1
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy
+      - matplotlib
+      - scikit-learn
+      - soundfile
+      - resemblyzer
+      - ffmpeg-python
+      - opencv-python
+      - mediapipe
+      - deepface

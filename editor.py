@@ -1,5 +1,6 @@
 from diarize import diarize
 from faces import create_face_ids
+from subtitles import create_subtitle_video
 
 import torch
 import tensorflow as tf
@@ -20,9 +21,9 @@ def check_tf_cuda():
     print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
 check_torch_cuda()
-check_tf_cuda()
+# check_tf_cuda()
 
-video_path = "inputvids/rhettandlink_edit3.mp4"
+video_path = "inputvids/rhettandlink_edit2.mp4"
 
 # Diarize audio
 speaker_segments = diarize(video_path, n_speakers=2)
@@ -184,3 +185,4 @@ def extract_audio_and_apply_to_video(input_video_file, new_video_file, output_fi
 output_path = "outputvids/output.mp4"
 crop_video_on_speaker_bbox_static(video_path, output_path, face_db, speaker_segments, ids_dict)
 extract_audio_and_apply_to_video(video_path, output_path, "outputvids/output_final.mp4")
+create_subtitle_video("outputvids/output_final.mp4", "outputvids/output.srt", "outputvids/output_final_subtitled.mp4")

@@ -63,10 +63,6 @@ def add_subtitles_from_srt(video_path, srt_path, output_video_path):
     except ffmpeg.Error as e:
         print(f"[!] Error occurred while processing: {e}")
 
-video_path = "outputvids/output_final.mp4"
-srt_path = f'outputvids/{video_path.split("/")[-1].split(".")[0]}.srt'
-output_video_path = f'outputvids/{video_path.split("/")[-1].split(".")[0]}_subtitled.mp4'
-
-generate_word_srt(video_path, srt_path)
-
-add_subtitles_from_srt(video_path, srt_path, output_video_path)
+def create_subtitle_video(video_path, srt_path, output_video_path):
+    generate_word_srt(video_path, srt_path)
+    add_subtitles_from_srt(video_path, srt_path, output_video_path)

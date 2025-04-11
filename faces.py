@@ -103,9 +103,9 @@ def create_face_ids(video_path, max_num_faces):
                 cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        cv2.imshow("MediaPipe + DeepFace", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        # cv2.imshow("MediaPipe + DeepFace", frame)
+        # if cv2.waitKey(1) & 0xFF == ord('q'):
+            # break
 
     cap.release()
     cv2.destroyAllWindows()

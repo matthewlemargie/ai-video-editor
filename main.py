@@ -3,7 +3,6 @@ from faces import create_face_ids
 from subtitles import create_subtitle_video
 
 import torch
-import tensorflow as tf
 import cv2
 import subprocess
 import os
@@ -15,15 +14,9 @@ def check_torch_cuda():
     else:
         print("⚡ CUDA/GPU is not available, running on CPU.")
 
-def check_tf_cuda():
-    print("TensorFlow version:", tf.__version__)
-    print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
-    print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-
 check_torch_cuda()
-# check_tf_cuda()
 
-video_path = "inputvids/rhettandlink_edit6.mp4"
+video_path = "inputvids/rhettandlink_edit4.mp4"
 
 # Diarize audio
 speaker_segments = diarize(video_path, n_speakers=2)
@@ -128,7 +121,7 @@ def crop_video_on_speaker_bbox_static(
         if bbox:
             x1, x2 = bbox
         else:
-            x1, x2 = 0, 608
+            x1, x2 = 0, new_width
 
         cropped = frame[0:height, x1:x2]
         out.write(cropped)

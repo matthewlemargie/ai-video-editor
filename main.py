@@ -22,6 +22,10 @@ if torch.cuda.is_available():
 else:
     print("⚡ CUDA/GPU is not available, running on CPU.")
 
+os.makedirs("outputvids", exist_ok=True)
+os.makedirs("segments_cache", exist_ok=True)
+os.makedirs("subtitles_cache", exist_ok=True)
+
 video_path = args.video_path
 video_title = Path(video_path).stem
 
@@ -33,11 +37,15 @@ worker.start()
 editor.gui.launch_gui(editor.speaker_segments)
 worker.join()
 
-output_path = f"outputvids{os.sep}output.mp4"
-editor.crop_video_on_speaker_bbox_static(output_path)
-editor.extract_audio_and_apply_to_video(output_path, f"outputvids{os.sep}output_final.mp4")
-os.remove("outputvids/output.mp4")
-create_subtitle_video(f"outputvids{os.sep}output_final.mp4", f"outputvids{os.sep}{video_title}.srt", f"outputvids/{video_title}_final_subtitled.mp4")
-os.remove(f"outputvids{os.sep}output_final.mp4")
+output_path = os.path.join("outputvids", "output.mp4")
+output_final_path = os.path.join("outputvids", "output_final.mp4")
+output_final_subtitled_path = os.path.join("outputvids", f"{video_title}_final_subtitled.mp4")
+subtitle_path = os.path.join("subtitles_cache", f"{video_title}.srt")
 
-subprocess.run(["mpv", f"outputvids{os.sep}{video_title}_final_subtitled.mp4"])
+editor.crop_video_on_speaker_bbox_static(output_path)
+editor.extract_audio_and_apply_to_video(output_path, output_final_path)
+os.remove(output_path)
+create_subtitle_video(output_final_path, subtitle_path, output_final_subtitled_path)
+os.remove(output_final_path)
+
+# subprocess.run(["mpv", output_final_subtitled_path])

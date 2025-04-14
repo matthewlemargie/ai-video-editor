@@ -33,7 +33,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
     face_db = {}  # Stores {face_id: (embedding, bbox)}
     example_faces = {}
 
-    skip_frames = 4
+    skip_frames = 14
 
     for i in tqdm(range(math.ceil(total_frames // (skip_frames + 1))), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()

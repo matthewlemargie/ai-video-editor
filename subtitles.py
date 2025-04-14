@@ -2,6 +2,7 @@ import ffmpeg
 import whisper
 import torch
 import os
+import shutil
 
 # Format SRT timestamp: 00:00:00,000
 def format_srt_time(seconds):
@@ -55,15 +56,21 @@ def add_subtitles_from_srt(video_path, srt_path, output_video_path):
         print(f"[!] SRT file not found: {srt_path}")
         return
 
+    if os.path.exists(srt_path):
+        shutil.move(srt_path, os.path.basename(srt_path))
+
     print(f"[1] Adding subtitles from '{srt_path}' to '{video_path}' with CUDA acceleration...")
 
     try:
         # Use ffmpeg to overlay subtitles on the video with CUDA for encoding
-        ffmpeg.input(video_path).output(output_video_path, vf=f"subtitles={srt_path}", 
+        ffmpeg.input(video_path).output(output_video_path, vf=f"subtitles={os.path.basename(srt_path)}", 
                                         vcodec="h264_nvenc").run(overwrite_output=True)
         print(f"[✓] Done! Video saved as: {output_video_path}")
+        if os.path.exists(os.path.basename(srt_path)):
+            shutil.move(os.path.basename(srt_path), srt_path)
     except ffmpeg.Error as e:
         print(f"[!] Error occurred while processing: {e}")
+
 
 def create_subtitle_video(video_path, srt_path, output_video_path):
     generate_word_srt(video_path, srt_path)

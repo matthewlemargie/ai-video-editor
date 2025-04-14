@@ -24,12 +24,12 @@ class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video):
         self.video_path = video_path
         self.gui = GUI(video_path)
-        if os.path.exists(f"outputvids{os.sep}{Path(video_path).stem}_segments.json"):
-            with open(f"outputvids{os.sep}{Path(video_path).stem}_segments.json", "r") as f:
+        if os.path.exists(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json"):
+            with open(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json", "r") as f:
                 self.speaker_segments = json.load(f)
         else:
             self.speaker_segments = diarize(video_path, n_speakers=n_speakers)
-            with open(f"outputvids{os.sep}{Path(video_path).stem}_segments.json", "w") as f:
+            with open(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json", "w") as f:
                 json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
         self.face_db, self.example_faces = create_face_ids(video_path, max_num_faces=max_num_faces, show_video=show_video)
         self.face_ids = self.face_db.keys()
@@ -143,7 +143,7 @@ class TikTokEditor:
         print(f"Final video with audio saved to {output_file}")
         
         # Optional: Remove the temporary audio file after processing
-        subprocess.run(['rm', audio_file])
+        os.remove(audio_file)
         print(f"Temporary audio file {audio_file} removed.")
         
 

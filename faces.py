@@ -16,14 +16,14 @@ def generate_id():
 
 def create_face_ids(video_path, max_num_faces, show_video):
     # Setup
-    threshold = 0.9  # Cosine similarity threshold for identity matching
+    threshold = 0.6  # Cosine similarity threshold for identity matching
     model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
     model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize MediaPipe Face Mesh
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=max_num_faces,
-                                       min_detection_confidence=0.1, min_tracking_confidence=0.5)
+                                       min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
     # Video input
     cap = cv2.VideoCapture(video_path)
@@ -33,7 +33,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
     face_db = {}  # Stores {face_id: (embedding, bbox)}
     example_faces = {}
 
-    skip_frames = 9
+    skip_frames = 4
 
     for i in tqdm(range(math.ceil(total_frames // (skip_frames + 1))), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()
@@ -53,7 +53,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     x_min, y_min, x_max, y_max = min(x_min, x), min(y_min, y), max(x_max, x), max(y_max, y)
 
                 # Padding for better crop
-                pad = 75
+                pad = 50
                 x_min, y_min = max(0, x_min - pad), max(0, y_min - pad)
                 x_max, y_max = min(w, x_max + pad), min(h, y_max + pad)
 
@@ -121,6 +121,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
     for k, v in face_db.items():
         face_db[k] = v[1]
 
+    print(len(face_db.keys()))
     return face_db, example_faces
 
 

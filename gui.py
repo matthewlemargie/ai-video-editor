@@ -64,7 +64,7 @@ class GUI:
         self.is_playing = False
         pause_button.config(text="Pause")
 
-# GUI logic in a thread
+    # GUI logic in a thread
     def launch_gui(self, speaker_segments):
         self.root.title("Speaker Segments")
 

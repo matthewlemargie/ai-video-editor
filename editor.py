@@ -2,16 +2,35 @@ import cv2
 import subprocess
 import math
 from PIL import Image, ImageTk
+import json
+import os
+from pathlib import Path
+import numpy as np
 
 from diarize import diarize
 from faces import create_face_ids
 from gui import GUI, show_face_in_tk
 
+def convert_to_serializable(obj):
+    if isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return str(obj)
+
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video):
         self.video_path = video_path
         self.gui = GUI(video_path)
-        self.speaker_segments = diarize(video_path, n_speakers=n_speakers)
+        if os.path.exists(f"outputvids/{Path(video_path).stem}_segments.json"):
+            with open(f"outputvids/{Path(video_path).stem}_segments.json", "r") as f:
+                self.speaker_segments = json.load(f)
+        else:
+            self.speaker_segments = diarize(video_path, n_speakers=n_speakers)
+            with open(f"outputvids/{Path(video_path).stem}_segments.json", "w") as f:
+                json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
         self.face_db, self.example_faces = create_face_ids(video_path, max_num_faces=max_num_faces, show_video=show_video)
         self.face_ids = self.face_db.keys()
         self.ids_dict = {}
@@ -104,7 +123,7 @@ class TikTokEditor:
         ]
         
         # Run the extract audio command
-        subprocess.run(extract_audio_command, check=True)
+        subprocess.run(extract_audio_command)
         print(f"Audio extracted to {audio_file}")
         
         # Step 2: Apply the extracted audio to the new video
@@ -120,7 +139,7 @@ class TikTokEditor:
         ]
         
         # Run the apply audio command
-        subprocess.run(apply_audio_command, check=True)
+        subprocess.run(apply_audio_command)
         print(f"Final video with audio saved to {output_file}")
         
         # Optional: Remove the temporary audio file after processing

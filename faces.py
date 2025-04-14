@@ -6,7 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import uuid
 import torch
 import os
-from time import time
+import math
 from tqdm import tqdm
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disables CUDA for TensorFlow
@@ -14,9 +14,9 @@ from tqdm import tqdm
 def generate_id():
     return str(uuid.uuid4())[:8]
 
-def create_face_ids(video_path, max_num_faces):
+def create_face_ids(video_path, max_num_faces, show_video):
     # Setup
-    threshold = 0.5  # Cosine similarity threshold for identity matching
+    threshold = 0.9  # Cosine similarity threshold for identity matching
     model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
     model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -33,7 +33,9 @@ def create_face_ids(video_path, max_num_faces):
     face_db = {}  # Stores {face_id: (embedding, bbox)}
     example_faces = {}
 
-    for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
+    skip_frames = 9
+
+    for i in tqdm(range(math.ceil(total_frames // (skip_frames + 1))), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()
         if not ret:
             break
@@ -103,9 +105,15 @@ def create_face_ids(video_path, max_num_faces):
                 cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        # cv2.imshow("MediaPipe + DeepFace", frame)
-        # if cv2.waitKey(1) & 0xFF == ord('q'):
-            # break
+        if show_video:
+            cv2.imshow("MediaPipe + DeepFace", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        for _ in range(skip_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
 
     cap.release()
     cv2.destroyAllWindows()

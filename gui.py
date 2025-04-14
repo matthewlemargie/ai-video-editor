@@ -1,11 +1,7 @@
 import torch
 import cv2
-import subprocess
 import os
-import threading
 import sys
-import math
-import argparse
 import tkinter as tk
 import tkinter.simpledialog as sd
 from PIL import Image, ImageTk
@@ -26,6 +22,7 @@ class GUI:
 
     # Function to play audio with volume control
     def play_segment(self, start, end, volume_var):
+        pygame.mixer.stop()
         segment = self.audio[int(start * 1000): int(end * 1000)]
         # Save the audio to a temporary file to load in pygame
         temp_filename = "temp_segment.wav"
@@ -33,6 +30,8 @@ class GUI:
         
         # Load the audio into pygame
         sound = pygame.mixer.Sound(temp_filename)
+
+        os.remove(temp_filename)
         
         # Set the volume using the volume slider value
         volume = volume_var.get()  # Get the current volume value from the slider
@@ -41,28 +40,8 @@ class GUI:
         # Play the sound
         sound.play()
         
-        self.is_playing = True  # Set the state to playing
-
-        # Wait until the audio finishes playing
-        while pygame.mixer.get_busy():
-            time.sleep(0.1)
-        
-        self.is_playing = False  # Reset the state after playing
-
-    def pause_audio(self):
-        if self.is_playing:
-            pygame.mixer.pause()
-            self.is_playing = False
-            pause_button.config(text="Resume")
-        else:
-            pygame.mixer.unpause()
-            self.is_playing = True
-            pause_button.config(text="Pause")
-
     def stop_audio(self):
         pygame.mixer.stop()
-        self.is_playing = False
-        pause_button.config(text="Pause")
 
     # GUI logic in a thread
     def launch_gui(self, speaker_segments):
@@ -89,11 +68,6 @@ class GUI:
             button = tk.Button(self.root, text=f"{start:.2f}s - {end:.2f}s", 
                                command=lambda s=start, e=end: self.play_segment(s, e, volume_var))
             button.pack(pady=5)
-
-        # Create a pause/resume button
-        global pause_button
-        pause_button = tk.Button(self.root, text="Pause", command=self.pause_audio)
-        pause_button.pack(pady=10)
 
         # Create a stop button
         stop_button = tk.Button(self.root, text="Stop", command=self.stop_audio)

@@ -33,11 +33,11 @@ worker.start()
 editor.gui.launch_gui(editor.speaker_segments)
 worker.join()
 
-output_path = "outputvids/output.mp4"
+output_path = f"outputvids{os.sep}output.mp4"
 editor.crop_video_on_speaker_bbox_static(output_path)
-editor.extract_audio_and_apply_to_video(output_path, "outputvids/output_final.mp4")
+editor.extract_audio_and_apply_to_video(output_path, f"outputvids{os.sep}output_final.mp4")
 os.remove("outputvids/output.mp4")
-create_subtitle_video("outputvids/output_final.mp4", f"outputvids/{video_title}.srt", f"outputvids/{video_title}_final_subtitled.mp4")
-os.remove("outputvids/output_final.mp4")
+create_subtitle_video(f"outputvids{os.sep}output_final.mp4", f"outputvids{os.sep}{video_title}.srt", f"outputvids/{video_title}_final_subtitled.mp4")
+os.remove(f"outputvids{os.sep}output_final.mp4")
 
-subprocess.run(["mpv", f"outputvids/{video_title}_final_subtitled.mp4"])
+subprocess.run(["mpv", f"outputvids{os.sep}{video_title}_final_subtitled.mp4"])

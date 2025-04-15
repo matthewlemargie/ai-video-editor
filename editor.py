@@ -151,7 +151,9 @@ class TikTokEditor:
         to_delete = set()
 
         for face_id in self.face_ids:
-            win = show_face_in_tk(self.example_faces[face_id])
+            cv2.imshow("face", self.example_faces[face_id])
+            cv2.waitKey(1)
+            # win = show_face_in_tk(self.example_faces[face_id])
             while True:
                 try:
                     speaker_id = input(f"Which speaker belongs to face ID {face_id}: ")
@@ -165,12 +167,14 @@ class TikTokEditor:
                             new_face_info = self.face_db[face_id]
                             self.face_db[main_face_id] = tuple(x + y for x, y in zip(main_face_info, new_face_info))
                             to_delete.add(face_id)
-                    win.destroy()
+                    # win.destroy()
                     break
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
                     print("Invalid input:", e)
+
+        cv2.destroyAllWindows()
 
         self.gui.root.after(0, self.gui.root.destroy)
 

@@ -9,7 +9,7 @@ import numpy as np
 
 from diarize import diarize
 from faces import create_face_ids
-from gui import GUI, show_face_in_tk
+from gui import GUI
 
 def convert_to_serializable(obj):
     if isinstance(obj, (np.integer, np.int64)):
@@ -34,6 +34,29 @@ class TikTokEditor:
         self.face_db, self.example_faces = create_face_ids(video_path, max_num_faces=max_num_faces, show_video=show_video)
         self.face_ids = self.face_db.keys()
         self.ids_dict = {}
+        self.gui.match_faces_to_voices(self.face_ids, self.example_faces, self.speaker_segments)
+        self.combine_speakers_faces()
+
+
+    def combine_speakers_faces(self):
+        to_delete = set()
+        for face_id, speaker_id in self.gui.faces_to_speakers.items():
+            if speaker_id not in self.ids_dict:
+                self.ids_dict[speaker_id] = face_id
+            else:
+                main_face_id = self.ids_dict[speaker_id]
+                main_face_info = self.face_db[main_face_id]
+                new_face_info = self.face_db[face_id]
+                self.face_db[main_face_id] = tuple(x + y for x, y in zip(main_face_info, new_face_info))
+                to_delete.add(face_id)
+
+        for id in to_delete:
+            del self.face_db[id]
+
+        for k, v in self.face_db.items():
+            avgs = (int(self.face_db[k][1]/self.face_db[k][0]), int(self.face_db[k][2]/self.face_db[k][0]))
+            self.face_db[k] = avgs
+
 
     def crop_video_on_speaker_bbox_static(self, output_path):
         cap = cv2.VideoCapture(self.video_path)
@@ -145,42 +168,3 @@ class TikTokEditor:
         # Optional: Remove the temporary audio file after processing
         os.remove(audio_file)
         print(f"Temporary audio file {audio_file} removed.")
-        
-
-    def match_faces_to_voices(self):
-        to_delete = set()
-
-        for face_id in self.face_ids:
-            cv2.imshow("face", self.example_faces[face_id])
-            cv2.waitKey(1)
-            # win = show_face_in_tk(self.example_faces[face_id])
-            while True:
-                try:
-                    speaker_id = input(f"Which speaker belongs to face ID {face_id}: ")
-                    if speaker_id:
-                        speaker_id = int(speaker_id)
-                        if speaker_id not in self.ids_dict:
-                            self.ids_dict[speaker_id] = face_id
-                        else:
-                            main_face_id = self.ids_dict[speaker_id]
-                            main_face_info = self.face_db[main_face_id]
-                            new_face_info = self.face_db[face_id]
-                            self.face_db[main_face_id] = tuple(x + y for x, y in zip(main_face_info, new_face_info))
-                            to_delete.add(face_id)
-                    # win.destroy()
-                    break
-                except KeyboardInterrupt:
-                    raise
-                except Exception as e:
-                    print("Invalid input:", e)
-
-        cv2.destroyAllWindows()
-
-        self.gui.root.after(0, self.gui.root.destroy)
-
-        for id in to_delete:
-            del self.face_db[id]
-
-        for k, v in self.face_db.items():
-            avgs = (int(self.face_db[k][1]/self.face_db[k][0]), int(self.face_db[k][2]/self.face_db[k][0]))
-            self.face_db[k] = avgs

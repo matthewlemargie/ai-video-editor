@@ -7,9 +7,11 @@ import os
 from pathlib import Path
 import numpy as np
 
+from gui import GUI
 from diarize import diarize
 from faces import create_face_ids
-from gui import GUI
+from subtitles import generate_word_srt, add_subtitles_from_srt 
+
 
 def convert_to_serializable(obj):
     if isinstance(obj, (np.integer, np.int64)):
@@ -20,29 +22,47 @@ def convert_to_serializable(obj):
         return obj.tolist()
     return str(obj)
 
+
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video):
+        self.n_speakers = n_speakers
+        self.max_num_faces = max_num_faces
+        self.show_video = show_video
         self.video_path = video_path
         self.video_title = Path(video_path).stem
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
+        self.segments_path = os.path.join("segments_cache", f"{Path(self.video_path).stem}_segments.json")
         self.subtitle_path = os.path.join("subtitles_cache", f"{self.video_title}.srt")
-
-        if os.path.exists(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json"):
-            with open(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json", "r") as f:
-                self.speaker_segments = json.load(f)
-        else:
-            self.speaker_segments = diarize(video_path, n_speakers=n_speakers)
-            with open(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json", "w") as f:
-                json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
-        self.face_db, self.example_faces = create_face_ids(video_path, max_num_faces=max_num_faces, show_video=show_video)
-        self.face_ids = self.face_db.keys()
         self.ids_dict = {}
 
-        self.gui = GUI(video_path)
+
+    def analyze(self):
+        if os.path.exists(self.segments_path):
+            with open(self.segments_path, "r") as f:
+                self.speaker_segments = json.load(f)
+        else:
+            self.speaker_segments = diarize(self.video_path, n_speakers=self.n_speakers)
+            with open(self.segments_path, "w") as f:
+                json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
+        self.face_db, self.example_faces = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+        self.face_ids = self.face_db.keys()
+
+        self.gui = GUI(self.video_path)
         self.gui.match_faces_to_voices(self.face_ids, self.example_faces, self.speaker_segments)
         self.combine_speakers_faces()
+
+
+    def edit(self):
+        self.crop_video_on_speaker_bbox_static()
+        self.extract_audio_and_apply_to_video()
+
+
+    def edit_w_subtitles(self):
+        self.crop_video_on_speaker_bbox_static()
+        self.extract_audio_and_apply_to_video()
+        self.create_subtitle_video()
 
 
     def combine_speakers_faces(self):
@@ -90,6 +110,7 @@ class TikTokEditor:
         current_speaker = None
         timeline_index = 0
 
+        # Editing loop
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -131,6 +152,12 @@ class TikTokEditor:
         cap.release()
         out.release()
         print("Done writing:", self.output_path)
+
+
+    def create_subtitle_video(self):
+        generate_word_srt(self.output_final_path, self.subtitle_path)
+        add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
+        os.remove(self.output_final_path)
 
 
     def extract_audio_and_apply_to_video(self):

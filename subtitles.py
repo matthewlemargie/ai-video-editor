@@ -4,6 +4,7 @@ import torch
 import os
 import shutil
 
+
 # Format SRT timestamp: 00:00:00,000
 def format_srt_time(seconds):
     hrs = int(seconds // 3600)
@@ -12,9 +13,11 @@ def format_srt_time(seconds):
     millis = int((seconds - int(seconds)) * 1000)
     return f"{hrs:02}:{mins:02}:{secs:02},{millis:03}"
 
+
 # Extract audio from video
 def extract_audio(video_path, audio_path):
     ffmpeg.input(video_path).output(audio_path, ac=1, ar='16000').run(overwrite_output=True)
+
 
 # Generate word-by-word SRT
 def generate_word_srt(video_path, srt_output):
@@ -47,6 +50,7 @@ def generate_word_srt(video_path, srt_output):
     os.remove(audio_path)
     print(f"[✓] Done! SRT file saved as: {srt_output}")
 
+
 def add_subtitles_from_srt(video_path, srt_path, output_video_path):
     # Check if the input video and SRT file exist
     if not os.path.exists(video_path):
@@ -70,9 +74,3 @@ def add_subtitles_from_srt(video_path, srt_path, output_video_path):
             shutil.move(os.path.basename(srt_path), srt_path)
     except ffmpeg.Error as e:
         print(f"[!] Error occurred while processing: {e}")
-
-
-def create_subtitle_video(video_path, srt_path, output_video_path):
-    generate_word_srt(video_path, srt_path)
-    add_subtitles_from_srt(video_path, srt_path, output_video_path)
-    os.remove(video_path)

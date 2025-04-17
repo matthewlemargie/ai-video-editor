@@ -14,6 +14,7 @@ from tqdm import tqdm
 def generate_id():
     return str(uuid.uuid4())[:8]
 
+
 def create_face_ids(video_path, max_num_faces, show_video):
     # Setup
     threshold = 0.6  # Cosine similarity threshold for identity matching
@@ -123,26 +124,3 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
     print(len(face_db.keys()))
     return face_db, example_faces
-
-
-    # num_threads = 4
-    # active_threads = []
-
-    # clips = np.array_split(video, num_threads)
-
-    # for clip in clips:
-        # while len(active_threads) >= num_threads:
-            # for t in active_threads:
-                # if not t.is_alive():  # Check if the thread is done
-                    # t.join()  # Ensure it's fully terminated
-                    # cv2.destroyAllWindows()
-                    # active_threads.remove(t)  # Remove from active list
-        # # Start a new thread
-        # t = threading.Thread(target=process_frames, args=(clip, face_db, example_faces, model_name, threshold))
-        # t.start()
-        # active_threads.append(t)
-
-    # Ensure all threads finish before exiting
-    # for t in active_threads:
-        # t.join()
-

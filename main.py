@@ -1,4 +1,3 @@
-from subtitles import create_subtitle_video
 from editor import TikTokEditor
 
 import torch
@@ -29,9 +28,7 @@ os.makedirs("subtitles_cache", exist_ok=True)
 video_path = args.video_path
 
 editor = TikTokEditor(video_path, args.n_speakers, args.max_num_faces, args.show_video)
-
-editor.crop_video_on_speaker_bbox_static()
-editor.extract_audio_and_apply_to_video()
-create_subtitle_video(editor.output_final_path, editor.subtitle_path, editor.output_final_subtitled_path)
+editor.analyze()
+editor.edit_w_subtitles()
 
 subprocess.run(["mpv", editor.output_final_subtitled_path, "--volume=60"])

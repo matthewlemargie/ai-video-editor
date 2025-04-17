@@ -21,6 +21,7 @@ class GUI:
         self.is_playing = False
         self.faces_to_speakers = {}
 
+
     # Function to play audio with volume control
     def play_segment(self, start, end, volume_var):
         pygame.mixer.stop()
@@ -40,9 +41,11 @@ class GUI:
         
         # Play the sound
         sound.play()
+
         
     def stop_audio(self):
         pygame.mixer.stop()
+
 
     def match_faces_to_voices(self, face_ids, example_faces, speaker_segments):
         self.root.title("Speakers to Faces")
@@ -120,10 +123,10 @@ class GUI:
             self.root.quit()
             sys.exit()
 
+
     def on_submit(self):
         for face_id, entry in self.entry_boxes.items():
             value = entry.get().strip()
             if value.isdigit():
                 self.faces_to_speakers[face_id] = int(value)
         self.root.destroy()
-

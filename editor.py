@@ -23,7 +23,12 @@ def convert_to_serializable(obj):
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video):
         self.video_path = video_path
-        self.gui = GUI(video_path)
+        self.video_title = Path(video_path).stem
+        self.output_path = os.path.join("output", "output.mp4")
+        self.output_final_path = os.path.join("output", "output_final.mp4")
+        self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
+        self.subtitle_path = os.path.join("subtitles_cache", f"{self.video_title}.srt")
+
         if os.path.exists(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json"):
             with open(f"segments_cache{os.sep}{Path(video_path).stem}_segments.json", "r") as f:
                 self.speaker_segments = json.load(f)
@@ -34,6 +39,8 @@ class TikTokEditor:
         self.face_db, self.example_faces = create_face_ids(video_path, max_num_faces=max_num_faces, show_video=show_video)
         self.face_ids = self.face_db.keys()
         self.ids_dict = {}
+
+        self.gui = GUI(video_path)
         self.gui.match_faces_to_voices(self.face_ids, self.example_faces, self.speaker_segments)
         self.combine_speakers_faces()
 
@@ -58,7 +65,7 @@ class TikTokEditor:
             self.face_db[k] = avgs
 
 
-    def crop_video_on_speaker_bbox_static(self, output_path):
+    def crop_video_on_speaker_bbox_static(self):
         cap = cv2.VideoCapture(self.video_path)
 
         # Get video properties
@@ -72,7 +79,7 @@ class TikTokEditor:
 
         # Initialize VideoWriter
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, output_size)
+        out = cv2.VideoWriter(self.output_path, fourcc, fps, output_size)
 
         boxes = {}
         for k, v in self.face_db.items():
@@ -123,17 +130,13 @@ class TikTokEditor:
 
         cap.release()
         out.release()
-        print("Done writing:", output_path)
+        print("Done writing:", self.output_path)
 
 
-    def extract_audio_and_apply_to_video(self, new_video_file, output_file):
+    def extract_audio_and_apply_to_video(self):
         """
         Extracts audio from the input video file and applies it to a new video file using FFmpeg.
 
-        Args:
-        - input_video_file (str): Path to the input video file (from which to extract audio).
-        - new_video_file (str): Path to the new video file (to which audio should be applied).
-        - output_file (str): Path where the final video with the extracted audio will be saved.
         """
         # Step 1: Extract audio from the input video
         audio_file = "extracted_audio.aac"  # Temporary file for extracted audio
@@ -151,20 +154,21 @@ class TikTokEditor:
         
         # Step 2: Apply the extracted audio to the new video
         apply_audio_command = [
-            'ffmpeg', '-i', new_video_file,  # Input new video file
+            'ffmpeg', '-i', self.output_path,  # Input new video file
             '-i', audio_file,  # Input extracted audio file
             '-c:v', 'copy',  # Copy video stream (no re-encoding)
             '-c:a', 'aac',  # Encode audio as AAC
             '-strict', 'experimental',  # Allow experimental codecs
             '-map', '0:v:0',  # Map the first video stream
             '-map', '1:a:0',  # Map the first audio stream
-            output_file  # Output file path
+            self.output_final_path  # Output file path
         ]
         
         # Run the apply audio command
         subprocess.run(apply_audio_command)
-        print(f"Final video with audio saved to {output_file}")
+        print(f"Final video with audio saved to {self.output_final_path}")
         
         # Optional: Remove the temporary audio file after processing
         os.remove(audio_file)
         print(f"Temporary audio file {audio_file} removed.")
+        os.remove(self.output_path)

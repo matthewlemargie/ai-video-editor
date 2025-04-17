@@ -22,24 +22,16 @@ if torch.cuda.is_available():
 else:
     print("⚡ CUDA/GPU is not available, running on CPU.")
 
-os.makedirs("outputvids", exist_ok=True)
+os.makedirs("output", exist_ok=True)
 os.makedirs("segments_cache", exist_ok=True)
 os.makedirs("subtitles_cache", exist_ok=True)
 
 video_path = args.video_path
-video_title = Path(video_path).stem
 
 editor = TikTokEditor(video_path, args.n_speakers, args.max_num_faces, args.show_video)
 
-output_path = os.path.join("outputvids", "output.mp4")
-output_final_path = os.path.join("outputvids", "output_final.mp4")
-output_final_subtitled_path = os.path.join("outputvids", f"{video_title}_final_subtitled.mp4")
-subtitle_path = os.path.join("subtitles_cache", f"{video_title}.srt")
+editor.crop_video_on_speaker_bbox_static()
+editor.extract_audio_and_apply_to_video()
+create_subtitle_video(editor.output_final_path, editor.subtitle_path, editor.output_final_subtitled_path)
 
-editor.crop_video_on_speaker_bbox_static(output_path)
-editor.extract_audio_and_apply_to_video(output_path, output_final_path)
-os.remove(output_path)
-create_subtitle_video(output_final_path, subtitle_path, output_final_subtitled_path)
-os.remove(output_final_path)
-
-subprocess.run(["mpv", output_final_subtitled_path])
+subprocess.run(["mpv", editor.output_final_subtitled_path, "--volume=60"])

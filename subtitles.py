@@ -75,3 +75,4 @@ def add_subtitles_from_srt(video_path, srt_path, output_video_path):
 def create_subtitle_video(video_path, srt_path, output_video_path):
     generate_word_srt(video_path, srt_path)
     add_subtitles_from_srt(video_path, srt_path, output_video_path)
+    os.remove(video_path)

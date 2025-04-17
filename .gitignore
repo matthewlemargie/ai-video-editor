@@ -1,9 +1,11 @@
 /__pycache__
+/example
 /inputvids
-/outputvids
+/output
 /segments_cache
 /subtitles_cache
 
 notes.txt
+liptrack.py
 liptrack1.py
 liptrack2.py

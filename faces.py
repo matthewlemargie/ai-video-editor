@@ -32,7 +32,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
     # Track embeddings + IDs
     face_db = {}  # Stores {face_id: (embedding, bbox)}
-    example_faces = {}
 
     skip_frames = 14
 
@@ -81,7 +80,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     continue  # Skip if embedding failed
 
                 matched_id = None
-                for face_id, (prev_embedding, _) in face_db.items():
+                for face_id, (prev_embedding, _, _) in face_db.items():
                     sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
                     if sim > threshold:
                         matched_id = face_id
@@ -96,10 +95,9 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     curr_count = face_db[matched_id][1][0]
                     x_avg_count = face_db[matched_id][1][1]
                     y_avg_count = face_db[matched_id][1][2]
-                    face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg))
+                    face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg), face_crop)
                 else:
-                    face_db[matched_id] = (embedding, (1, x_avg, y_avg))
-                    example_faces[matched_id] = face_crop
+                    face_db[matched_id] = (embedding, (1, x_avg, y_avg), face_crop)
                 
                 # Draw box + ID
                 cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
@@ -119,8 +117,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
     cap.release()
     cv2.destroyAllWindows()
 
-    for k, v in face_db.items():
-        face_db[k] = v[1]
 
     print(len(face_db.keys()))
-    return face_db, example_faces
+    return face_db

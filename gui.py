@@ -11,6 +11,7 @@ import time
 from pydub import AudioSegment
 from pydub.playback import _play_with_simpleaudio
 
+
 class GUI:
     def __init__(self, video_path):
         self.root = tk.Tk()
@@ -47,7 +48,7 @@ class GUI:
         pygame.mixer.stop()
 
 
-    def match_faces_to_voices(self, face_ids, example_faces, speaker_segments):
+    def match_faces_to_voices(self, face_ids, face_db, speaker_segments):
         self.root.title("Speakers to Faces")
 
         # Frame for showing face pics and entry boxes
@@ -57,7 +58,7 @@ class GUI:
         self.entry_boxes = {}     # To keep track of entries per face_id
 
         for face_id in face_ids:
-            rgb_img = cv2.cvtColor(example_faces[face_id], cv2.COLOR_BGR2RGB)
+            rgb_img = cv2.cvtColor(face_db[face_id][2], cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_img)
             tk_img = ImageTk.PhotoImage(pil_img)
 

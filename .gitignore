@@ -4,6 +4,7 @@
 /output
 /segments_cache
 /subtitles_cache
+/face_db_cache
 
 notes.txt
 liptrack.py

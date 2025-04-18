@@ -1,11 +1,11 @@
-from editor import TikTokEditor
-
 import torch
 import subprocess
 import threading
 import argparse
 from pathlib import Path
 import os
+
+from editor import TikTokEditor
 
 parser = argparse.ArgumentParser(description="AI-video-editor")
 parser.add_argument("--video-path", type=str, default="", help="Path to video to be edited")
@@ -21,13 +21,7 @@ if torch.cuda.is_available():
 else:
     print("⚡ CUDA/GPU is not available, running on CPU.")
 
-os.makedirs("output", exist_ok=True)
-os.makedirs("segments_cache", exist_ok=True)
-os.makedirs("subtitles_cache", exist_ok=True)
-
-video_path = args.video_path
-
-editor = TikTokEditor(video_path, args.n_speakers, args.max_num_faces, args.show_video)
+editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args.show_video)
 editor.analyze()
 editor.edit_w_subtitles()
 

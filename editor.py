@@ -25,6 +25,11 @@ def convert_to_serializable(obj):
 
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video):
+        os.makedirs("output", exist_ok=True)
+        os.makedirs("segments_cache", exist_ok=True)
+        os.makedirs("subtitles_cache", exist_ok=True)
+        os.makedirs("face_db_cache", exist_ok=True)
+
         self.n_speakers = n_speakers
         self.max_num_faces = max_num_faces
         self.show_video = show_video
@@ -35,6 +40,7 @@ class TikTokEditor:
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
         self.segments_path = os.path.join("segments_cache", f"{Path(self.video_path).stem}_segments.json")
         self.subtitle_path = os.path.join("subtitles_cache", f"{self.video_title}.srt")
+        self.face_db_path = os.path.join("face_db_cache", f"{self.video_title}_face_db.json")
         self.ids_dict = {}
 
 
@@ -46,11 +52,19 @@ class TikTokEditor:
             self.speaker_segments = diarize(self.video_path, n_speakers=self.n_speakers)
             with open(self.segments_path, "w") as f:
                 json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
-        self.face_db, self.example_faces = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+
+        if os.path.exists(self.face_db_path):
+            with open(self.face_db_path, "r") as f:
+                self.face_db = json.load(f)
+        else:
+            self.face_db = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+            with open(self.face_db_path, "w") as f:
+                json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
+
         self.face_ids = self.face_db.keys()
 
         self.gui = GUI(self.video_path)
-        self.gui.match_faces_to_voices(self.face_ids, self.example_faces, self.speaker_segments)
+        self.gui.match_faces_to_voices(self.face_ids, self.face_db, self.speaker_segments)
         self.combine_speakers_faces()
 
 
@@ -81,7 +95,7 @@ class TikTokEditor:
             del self.face_db[id]
 
         for k, v in self.face_db.items():
-            avgs = (int(self.face_db[k][1]/self.face_db[k][0]), int(self.face_db[k][2]/self.face_db[k][0]))
+            avgs = (int(v[1][1]/v[1][0]), int(v[1][2]/v[1][0]))
             self.face_db[k] = avgs
 
 

@@ -1,5 +1,6 @@
 import torch
 import cv2
+import numpy as np
 import os
 import sys
 import tkinter as tk
@@ -58,7 +59,10 @@ class GUI:
         self.entry_boxes = {}     # To keep track of entries per face_id
 
         for face_id in face_ids:
-            rgb_img = cv2.cvtColor(face_db[face_id][2], cv2.COLOR_BGR2RGB)
+            img = np.array(face_db[face_id][2])
+            if img.dtype != np.uint8:
+                img = img.astype(np.uint8)
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb_img)
             tk_img = ImageTk.PhotoImage(pil_img)
 
@@ -103,13 +107,7 @@ class GUI:
         stop_button = tk.Button(audios_frame, text="Stop", command=self.stop_audio)
         stop_button.pack(pady=10)
 
-        # Handle closing gracefully on keyboard interrupt
-        def on_closing():
-            pygame.mixer.stop()
-            self.root.quit()
-            sys.exit()
-
-        self.root.protocol("WM_DELETE_WINDOW", on_closing)  # Handle window close button
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)  # Handle window close button
 
         # Submit button at the bottom
         submit_btn = tk.Button(self.root, text="Submit", command=self.on_submit)
@@ -123,6 +121,13 @@ class GUI:
             print("Exiting program...")
             self.root.quit()
             sys.exit()
+
+
+    # Handle closing gracefully on keyboard interrupt
+    def on_closing():
+        pygame.mixer.stop()
+        self.root.quit()
+        sys.exit()
 
 
     def on_submit(self):

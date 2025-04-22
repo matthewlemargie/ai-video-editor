@@ -90,8 +90,6 @@ class TikTokEditor:
             else:
                 combine_ids_dict[face_ids[0]] = set(face_ids[1:])
 
-        print(combine_ids_dict.items())
-
         main_keys = set(combine_ids_dict.keys())
 
         for speaker_id, face_ids in self.gui.speakers_to_faces.items():
@@ -99,8 +97,6 @@ class TikTokEditor:
                 if id in main_keys:
                     self.ids_dict[speaker_id] = id
 
-        print(self.ids_dict)
-        
         for segment, face_db in self.shot_segments.items():
             new_db = {}
             for main_id, other_ids in combine_ids_dict.items():
@@ -135,8 +131,6 @@ class TikTokEditor:
 
         self.shot_segments = list(self.shot_segments.items())
 
-        print(self.speaker_segments)
-
         timeline_index = 0
         for segment, face_db in self.shot_segments:
             start, end = segment
@@ -145,7 +139,6 @@ class TikTokEditor:
                 box = (box[0] - new_width//2, box[0] + new_width//2)
                 boxes[id] = box
 
-            print(face_db.items())
             for i in tqdm(range(start, end + 1)):
                 ret, frame = cap.read()
                 if not ret:
@@ -164,14 +157,25 @@ class TikTokEditor:
                     else:
                         break
 
-                # Get the face ID for the current speaker
-                face_id = self.ids_dict.get(current_speaker)
-                bbox = boxes.get(face_id)
+                # edit by camera switching
+                # edit by diarization if more than one face in shot
+                # if only one face on screen, default to singular face
+                # (helps with choppy diarization from quick speaking etc.)
+                ids_list = list(face_db.keys())
+                if ids_list:
+                    if len(ids_list) == 1:
+                        face_id = list(face_db.keys())[0] 
+                    else:
+                        face_id = self.ids_dict.get(current_speaker)
+                    bbox = boxes.get(face_id)
+                else:
+                    bbox = False
 
                 if bbox:
                     x1, x2 = bbox
                 else:
-                    x1, x2 = 0, new_width
+                    # default to middle of screen if no faces
+                    x1, x2 = width//2 - new_width//2, width//2 + new_width//2
 
                 # Handle cases where faces are too close to edge
                 if x2 > width:

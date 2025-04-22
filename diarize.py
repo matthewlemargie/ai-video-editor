@@ -59,7 +59,7 @@ def diarize(video_path, n_speakers=2):
 
     for chunk in chunks:
         _, cont_embeds, wav_splits = encoder.embed_utterance(
-            chunk, return_partials=True, rate=16
+            chunk, return_partials=True, rate=8
             )
 
         if all_embeds is None:
@@ -130,7 +130,7 @@ def diarize_chunk(wav_chunk, sr, encoder, n_speakers=2, rate=16):
 
 def old_diarize(video_path, n_speakers=2):
     wav, sr = extract_audio_np(video_path)
-    encoder = VoiceEncoder()
+    encoder = VoiceEncoder(window_secs=0.5, overlap=0.25)
 
     chunks = split_audio(wav, sr, chunk_duration=60)
     global_profiles = {}

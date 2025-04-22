@@ -1,4 +1,5 @@
 import cv2
+import time
 import mediapipe as mp
 import numpy as np
 from facenet_pytorch import InceptionResnetV1, MTCNN
@@ -43,7 +44,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
     prev = None
 
     last_change_frame = 1
-    frame_count = 1
 
     for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()
@@ -57,11 +57,15 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
         if prev is not None:
             shot_change = is_shot_change(prev, frame)
-            shot_change and print(shot_change)
         else:
             shot_change= False
 
         prev = frame
+
+        if shot_change:
+            shot_segments[(last_change_frame, i)] = position_db.copy()
+            position_db = {}
+            last_change_frame = i + 1
 
         if result.multi_face_landmarks:
             for face_landmarks in result.multi_face_landmarks:
@@ -133,10 +137,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
                     cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        if shot_change:
-            shot_segments[(last_change_frame, i)] = position_db.copy()
-            position_db = {}
-            last_change_frame = i + 1
 
         if show_video:
             cv2.imshow("MediaPipe + DeepFace", frame)
@@ -147,7 +147,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
             ret, frame = cap.read()
             if not ret:
                 break
-        frame_count += 1
 
     if position_db is not {}:
         shot_segments[(last_change_frame, total_frames)] = position_db.copy()

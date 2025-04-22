@@ -4,7 +4,6 @@ import torch
 import os
 import shutil
 
-
 # Format SRT timestamp: 00:00:00,000
 def format_srt_time(seconds):
     hrs = int(seconds // 3600)
@@ -46,6 +45,65 @@ def generate_word_srt(video_path, srt_output):
 
                 f.write(f"{index}\n{start} --> {end}\n{text}\n\n")
                 index += 1
+
+    os.remove(audio_path)
+    print(f"[✓] Done! SRT file saved as: {srt_output}")
+
+def generate_sentence_srt(video_path, srt_output):
+    if os.path.exists(srt_output):
+        return
+    audio_path = "temp_audio.wav"
+
+    print("[1] Extracting audio...")
+    extract_audio(video_path, audio_path)
+
+    print("[2] Transcribing with Whisper (word timestamps)...")
+    model = whisper.load_model("medium", device="cuda" if torch.cuda.is_available() else "cpu")
+    result = model.transcribe(audio_path, word_timestamps=True, verbose=False)
+    SENTENCE_ENDINGS = {",", ".", "!", "?"}
+    MAX_CHARS = 60  # Optional: to avoid super long lines, you can still use this
+
+    print("[3] Writing sentence-based SRT...")
+    index = 1
+    with open(srt_output, "w", encoding="utf-8") as f:
+        buffer = ""
+        start_time = None
+        end_time = None
+
+        for segment in result["segments"]:
+            for word in segment["words"]:
+                word_text = word["word"]
+                if not word_text.strip():
+                    continue
+
+                # Start of a new sentence
+                if buffer == "":
+                    start_time = word["start"]
+
+                buffer += word_text + " "
+                end_time = word["end"]
+
+                # If the word ends with sentence punctuation, flush buffer
+                if word_text[-1] in SENTENCE_ENDINGS:
+                    sentence = buffer.strip()
+                    # Optional: wrap long lines if desired
+                    if len(sentence) > MAX_CHARS:
+                        chunks = [sentence[i:i+MAX_CHARS] for i in range(0, len(sentence), MAX_CHARS)]
+                    else:
+                        chunks = [sentence]
+
+                    for chunk in chunks:
+                        f.write(f"{index}\n{format_srt_time(start_time)} --> {format_srt_time(end_time)}\n{chunk.strip()}\n\n")
+                        index += 1
+
+                    buffer = ""
+                    start_time = None
+                    end_time = None
+
+        # Write any trailing buffer
+        if buffer:
+            sentence = buffer.strip()
+            f.write(f"{index}\n{format_srt_time(start_time)} --> {format_srt_time(end_time)}\n{sentence}\n\n")
 
     os.remove(audio_path)
     print(f"[✓] Done! SRT file saved as: {srt_output}")

@@ -22,6 +22,7 @@ class GUI:
         # Variable to keep track of whether the audio is playing
         self.is_playing = False
         self.faces_to_speakers = {}
+        self.speakers_to_faces = {}
 
 
     # Function to play audio with volume control
@@ -59,7 +60,7 @@ class GUI:
         self.entry_boxes = {}     # To keep track of entries per face_id
 
         for face_id in face_ids:
-            img = np.array(face_db[face_id][2])
+            img = np.array(face_db[face_id][1])
             if img.dtype != np.uint8:
                 img = img.astype(np.uint8)
             rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -135,4 +136,8 @@ class GUI:
             value = entry.get().strip()
             if value.isdigit():
                 self.faces_to_speakers[face_id] = int(value)
+                if int(value) in self.speakers_to_faces:
+                    self.speakers_to_faces[int(value)].append(face_id)
+                else:
+                    self.speakers_to_faces[int(value)] = [face_id]
         self.root.destroy()

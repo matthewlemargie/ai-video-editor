@@ -25,4 +25,5 @@ dependencies:
       - tqdm
       - facenet-pytorch
       - simpleaudio
+      - scikit-image
 

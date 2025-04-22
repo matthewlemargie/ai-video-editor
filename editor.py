@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import numpy as np
+import time
+from tqdm import tqdm
 
 from gui import GUI
 from diarize import diarize
@@ -57,7 +59,7 @@ class TikTokEditor:
             with open(self.face_db_path, "r") as f:
                 self.face_db = json.load(f)
         else:
-            self.face_db = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+            self.face_db, self.shot_segments = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
 
@@ -80,23 +82,39 @@ class TikTokEditor:
 
 
     def combine_speakers_faces(self):
-        to_delete = set()
-        for face_id, speaker_id in self.gui.faces_to_speakers.items():
-            if speaker_id not in self.ids_dict:
-                self.ids_dict[speaker_id] = face_id
+        combine_ids_dict = {}
+
+        for speaker_id, face_ids in self.gui.speakers_to_faces.items():
+            if len(face_ids) == 1:
+                combine_ids_dict[face_ids[0]] = None
             else:
-                main_face_id = self.ids_dict[speaker_id]
-                main_face_info = self.face_db[main_face_id]
-                new_face_info = self.face_db[face_id]
-                self.face_db[main_face_id] = tuple(x + y for x, y in zip(main_face_info, new_face_info))
-                to_delete.add(face_id)
+                combine_ids_dict[face_ids[0]] = set(face_ids[1:])
 
-        for id in to_delete:
-            del self.face_db[id]
+        print(combine_ids_dict.items())
 
-        for k, v in self.face_db.items():
-            avgs = (int(v[1][1]/v[1][0]), int(v[1][2]/v[1][0]))
-            self.face_db[k] = avgs
+        main_keys = set(combine_ids_dict.keys())
+
+        for speaker_id, face_ids in self.gui.speakers_to_faces.items():
+            for id in face_ids:
+                if id in main_keys:
+                    self.ids_dict[speaker_id] = id
+
+        print(self.ids_dict)
+        
+        for segment, face_db in self.shot_segments.items():
+            new_db = {}
+            for main_id, other_ids in combine_ids_dict.items():
+                if main_id in face_db:
+                    if main_id not in combine_ids_dict:
+                        continue
+                    new_db[main_id] = face_db[main_id]
+                    if other_ids is not None:
+                        for id in other_ids:
+                            if id in face_db:
+                                new_db[main_id] = tuple(x + y for x, y in zip(new_db[main_id], face_db[id])) 
+            for id, v in new_db.items():
+                new_db[id] = (v[1]/v[0], v[2]/v[0])
+            self.shot_segments[segment] = new_db
 
 
     def crop_video_on_speaker_bbox_static(self):
@@ -115,54 +133,55 @@ class TikTokEditor:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(self.output_path, fourcc, fps, output_size)
 
-        boxes = {}
-        for k, v in self.face_db.items():
-            box = (v[0] - new_width//2, v[0] + new_width//2)
-            boxes[k] = box
+        self.shot_segments = list(self.shot_segments.items())
 
-        frame_index = 0
-        current_speaker = None
+        print(self.speaker_segments)
+
         timeline_index = 0
+        for segment, face_db in self.shot_segments:
+            start, end = segment
+            boxes = {}
+            for id, box in face_db.items():
+                box = (box[0] - new_width//2, box[0] + new_width//2)
+                boxes[id] = box
 
-        # Editing loop
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            time_sec = frame_index / fps
-
-            # Determine current speaker
-            while timeline_index < len(self.speaker_segments):
-                speaker_id, start, end = self.speaker_segments[timeline_index]
-                if start <= time_sec <= end:
-                    current_speaker = speaker_id
+            print(face_db.items())
+            for i in tqdm(range(start, end + 1)):
+                ret, frame = cap.read()
+                if not ret:
                     break
-                elif time_sec > end:
-                    timeline_index += 1
+
+                time_sec = (i - 1) / fps
+
+                # Determine current speaker
+                while timeline_index < len(self.speaker_segments):
+                    speaker_id, start, end = self.speaker_segments[timeline_index]
+                    if start <= time_sec <= end:
+                        current_speaker = speaker_id
+                        break
+                    elif time_sec > end:
+                        timeline_index += 1
+                    else:
+                        break
+
+                # Get the face ID for the current speaker
+                face_id = self.ids_dict.get(current_speaker)
+                bbox = boxes.get(face_id)
+
+                if bbox:
+                    x1, x2 = bbox
                 else:
-                    break
+                    x1, x2 = 0, new_width
 
-            # Get the face ID for the current speaker
-            face_id = self.ids_dict.get(current_speaker)
-            bbox = boxes.get(face_id)
+                # Handle cases where faces are too close to edge
+                if x2 > width:
+                    cropped = frame[0:height, -new_width:]
+                elif x1 < 0:
+                    cropped = frame[0:height, 0:new_width]
+                else:
+                    cropped = frame[0:height, int(x1):int(x2)]
 
-            if bbox:
-                x1, x2 = bbox
-            else:
-                x1, x2 = 0, new_width
-
-            # Handle cases where faces are too close to edge
-            if x2 > width:
-                cropped = frame[0:height, -new_width:]
-            elif x1 < 0:
-                cropped = frame[0:height, 0:new_width]
-            else:
-                cropped = frame[0:height, x1:x2]
-
-            out.write(cropped)
-            frame_index += 1
-
+                out.write(cropped)
         cap.release()
         out.release()
         print("Done writing:", self.output_path)

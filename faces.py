@@ -9,6 +9,8 @@ import os
 import math
 from tqdm import tqdm
 
+from framediff import is_shot_change
+
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disables CUDA for TensorFlow
 
 def generate_id():
@@ -18,7 +20,7 @@ def generate_id():
 def create_face_ids(video_path, max_num_faces, show_video):
     # Setup
     threshold = 0.6  # Cosine similarity threshold for identity matching
-    model_name = 'Facenet'  # Can be ArcFace, Facenet512, VGG-Face, etc.
+    model_name = 'Facenet'
     model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize MediaPipe Face Mesh
@@ -28,14 +30,22 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
     # Video input
     cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # Get total number of frames for progress bar
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Track embeddings + IDs
-    face_db = {}  # Stores {face_id: (embedding, bbox)}
+    face_db = {}  # Stores {face_id: (embedding, bbox, face crop)}
+    embed_db = {}
+    position_db = {}
+    shot_segments = {}
 
-    skip_frames = 14
+    skip_frames = 0
 
-    for i in tqdm(range(math.ceil(total_frames // (skip_frames + 1))), desc="Processing frames", unit="frame"):
+    prev = None
+
+    last_change_frame = 1
+    frame_count = 1
+
+    for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()
         if not ret:
             break
@@ -44,6 +54,14 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
         h, w, _ = frame.shape
         current_faces = []
+
+        if prev is not None:
+            shot_change = is_shot_change(prev, frame)
+            shot_change and print(shot_change)
+        else:
+            shot_change= False
+
+        prev = frame
 
         if result.multi_face_landmarks:
             for face_landmarks in result.multi_face_landmarks:
@@ -98,11 +116,27 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg), face_crop)
                 else:
                     face_db[matched_id] = (embedding, (1, x_avg, y_avg), face_crop)
-                
+
+                if matched_id not in embed_db:
+                    embed_db[matched_id] = (embedding, face_crop)
+
+                if matched_id not in position_db:
+                    position_db[matched_id] = (1, x_avg, y_avg)
+                else:
+                    curr_count = position_db[matched_id][0]
+                    x_avg_count = position_db[matched_id][1]
+                    y_avg_count = position_db[matched_id][2]
+                    position_db[matched_id] = (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg)
+
                 # Draw box + ID
-                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                if show_video:
+                    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID: {matched_id}", (x_min, y_min - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        if shot_change:
+            shot_segments[(last_change_frame, i)] = position_db.copy()
+            position_db = {}
+            last_change_frame = i + 1
 
         if show_video:
             cv2.imshow("MediaPipe + DeepFace", frame)
@@ -113,10 +147,12 @@ def create_face_ids(video_path, max_num_faces, show_video):
             ret, frame = cap.read()
             if not ret:
                 break
+        frame_count += 1
+
+    if position_db is not {}:
+        shot_segments[(last_change_frame, total_frames)] = position_db.copy()
 
     cap.release()
     cv2.destroyAllWindows()
 
-
-    print(len(face_db.keys()))
-    return face_db
+    return embed_db, shot_segments

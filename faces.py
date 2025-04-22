@@ -1,5 +1,4 @@
 import cv2
-import time
 import mediapipe as mp
 import numpy as np
 from facenet_pytorch import InceptionResnetV1, MTCNN
@@ -34,7 +33,6 @@ def create_face_ids(video_path, max_num_faces, show_video):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Track embeddings + IDs
-    face_db = {}  # Stores {face_id: (embedding, bbox, face crop)}
     embed_db = {}
     position_db = {}
     shot_segments = {}
@@ -102,7 +100,7 @@ def create_face_ids(video_path, max_num_faces, show_video):
                     continue  # Skip if embedding failed
 
                 matched_id = None
-                for face_id, (prev_embedding, _, _) in face_db.items():
+                for face_id, (prev_embedding, _) in embed_db.items():
                     sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
                     if sim > threshold:
                         matched_id = face_id
@@ -113,16 +111,9 @@ def create_face_ids(video_path, max_num_faces, show_video):
 
                 x_avg = (x_max + x_min) / 2
                 y_avg = (y_max + y_min) / 2
-                if matched_id in face_db:
-                    curr_count = face_db[matched_id][1][0]
-                    x_avg_count = face_db[matched_id][1][1]
-                    y_avg_count = face_db[matched_id][1][2]
-                    face_db[matched_id] = (embedding, (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg), face_crop)
-                else:
-                    face_db[matched_id] = (embedding, (1, x_avg, y_avg), face_crop)
 
                 if matched_id not in embed_db:
-                    embed_db[matched_id] = (embedding, face_crop)
+                    embed_db[matched_id] = (embedding, cv2.resize(face_crop, (112, 112), interpolation=cv2.INTER_AREA))
 
                 if matched_id not in position_db:
                     position_db[matched_id] = (1, x_avg, y_avg)

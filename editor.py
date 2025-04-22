@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import numpy as np
-import time
 from tqdm import tqdm
 
 from gui import GUI
@@ -66,12 +65,14 @@ class TikTokEditor:
     def edit(self):
         self.crop_video_on_speaker_bbox_static()
         self.extract_audio_and_apply_to_video()
+        subprocess.run(["mpv", self.output_final_path, "--volume=60"])
 
 
     def edit_w_subtitles(self):
         self.crop_video_on_speaker_bbox_static()
         self.extract_audio_and_apply_to_video()
         self.create_subtitle_video()
+        subprocess.run(["mpv", self.output_final_subtitled_path, "--volume=60"])
 
 
     def combine_speakers_faces(self):

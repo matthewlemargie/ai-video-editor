@@ -13,6 +13,7 @@ parser.add_argument("--max-num-faces", type=int, default=2, help="Maximum number
 parser.add_argument("--n-speakers", type=int, default=2, help="number of speakers in the video")
 parser.add_argument("--show-video", action="store_true", help="Shows video while doing face detection/embeddings")
 parser.add_argument("--word-timestamps", action="store_true", help="Creates subtitles by word instead of by sentence")
+parser.add_argument("--add-subtitles", action="store_true", help="Add subtitles to output video")
 
 
 args = parser.parse_args()
@@ -25,6 +26,7 @@ else:
 
 editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args.show_video, args.word_timestamps)
 editor.analyze()
-editor.edit_w_subtitles()
-
-subprocess.run(["mpv", editor.output_final_subtitled_path, "--volume=60"])
+if args.add_subtitles:
+    editor.edit_w_subtitles()
+else:
+    editor.edit()

@@ -57,9 +57,13 @@ class GUI:
         faces_frame = tk.Frame(self.root, padx=10, pady=10)
         faces_frame.pack(padx=10, pady=10)
 
-        self.entry_boxes = {}     # To keep track of entries per face_id
+        columns = 8  # Number of images per row (adjust as needed)
+        self.entry_boxes = {}
 
-        for face_id in face_ids:
+        for idx, face_id in enumerate(face_ids):
+            row = idx // columns
+            col = idx % columns
+
             img = np.array(face_db[face_id][1])
             if img.dtype != np.uint8:
                 img = img.astype(np.uint8)
@@ -67,9 +71,9 @@ class GUI:
             pil_img = Image.fromarray(rgb_img)
             tk_img = ImageTk.PhotoImage(pil_img)
 
-            # Column for image + entry box
+            # Column frame for image + entry
             face_column = tk.Frame(faces_frame)
-            face_column.pack(side="right", padx=10)
+            face_column.grid(row=row, column=col, padx=10, pady=10)
 
             img_label = tk.Label(face_column, image=tk_img)
             img_label.image = tk_img

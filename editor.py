@@ -23,12 +23,39 @@ def convert_to_serializable(obj):
         return obj.tolist()
     return str(obj)
 
+def make_json_serializable(data):
+    serializable = {}
+    for key, value in data.items():
+        # Convert tuple keys to strings
+        key_str = str(key)
+        inner_dict = {}
+        for inner_key, inner_val in value.items():
+            # Convert tuple values to lists
+            inner_dict[inner_key] = list(inner_val)
+        serializable[key_str] = inner_dict
+    return serializable
+
+
+def stringify_keys(d):
+    return {str(k): v for k, v in d.items()}
+
+
+def parse_keys_to_tuples(d):
+    def try_tuple(k):
+        if k.startswith("(") and k.endswith(")"):
+            try:
+                return tuple(map(int, k[1:-1].split(", ")))
+            except:
+                pass
+        return k
+    return {try_tuple(k): v for k, v in d.items()}
+
 
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video, word_subtitles):
         os.makedirs("output", exist_ok=True)
-        os.makedirs("segments_cache", exist_ok=True)
-        os.makedirs("subtitles_cache", exist_ok=True)
+        os.makedirs("cache", exist_ok=True)
+        # os.makedirs("subtitles_cache", exist_ok=True)
         # os.makedirs("face_db_cache", exist_ok=True)
 
         self.n_speakers = n_speakers
@@ -40,9 +67,10 @@ class TikTokEditor:
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
-        self.segments_path = os.path.join("segments_cache", f"{Path(self.video_path).stem}_segments.json")
-        self.subtitle_path = os.path.join("subtitles_cache", f"{self.video_title}.srt")
-        # self.face_db_path = os.path.join("face_db_cache", f"{self.video_title}_face_db.json")
+        self.segments_path = os.path.join("cache", f"{Path(self.video_path).stem}_segments.json")
+        self.subtitle_path = os.path.join("cache", f"{self.video_title}.srt")
+        self.face_db_path = os.path.join("cache", f"{self.video_title}_face_db.json")
+        self.shots_path = os.path.join("cache", f"{self.video_title}_shots.json")
         self.ids_dict = {}
 
 
@@ -55,10 +83,20 @@ class TikTokEditor:
             with open(self.segments_path, "w") as f:
                 json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
 
-        self.face_db, self.shot_segments = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+        if os.path.exists(self.face_db_path) and os.path.exists(self.shots_path):
+            with open(self.face_db_path, "r") as f:
+                self.face_db = json.load(f)
+            with open(self.shots_path, "r") as f:
+                self.shot_segments = parse_keys_to_tuples(json.load(f))
+        else:
+            self.face_db, self.shot_segments = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+            with open(self.face_db_path, "w") as f:
+                json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
+            with open(self.shots_path, "w") as f:
+                json.dump(stringify_keys(self.shot_segments), f, indent=4, default=make_json_serializable)
 
         self.gui = GUI(self.video_path)
-        self.gui.match_faces_to_voices(self.face_db.keys(), self.face_db, self.speaker_segments)
+        self.gui.match_faces_to_voices(self.face_db, self.speaker_segments)
         self.combine_speakers_faces()
 
 

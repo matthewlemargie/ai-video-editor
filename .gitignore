@@ -2,10 +2,7 @@
 /example
 /inputvids
 /output
-/segments_cache
-/subtitles_cache
-/face_db_cache
-/shot_segments_cache
+/cache
 
 notes.txt
 liptrack.py

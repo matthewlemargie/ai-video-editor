@@ -11,6 +11,7 @@ import pygame
 import time
 from pydub import AudioSegment
 from pydub.playback import _play_with_simpleaudio
+from math import sqrt, ceil
 
 
 class GUI:
@@ -50,14 +51,16 @@ class GUI:
         pygame.mixer.stop()
 
 
-    def match_faces_to_voices(self, face_ids, face_db, speaker_segments):
+    def match_faces_to_voices(self, face_db, speaker_segments):
+        face_ids = face_db.keys()
         self.root.title("Speakers to Faces")
 
         # Frame for showing face pics and entry boxes
         faces_frame = tk.Frame(self.root, padx=10, pady=10)
         faces_frame.pack(padx=10, pady=10)
 
-        columns = 8  # Number of images per row (adjust as needed)
+        # columns = int(ceil(sqrt(len(face_ids))))
+        columns = 6
         self.entry_boxes = {}
 
         for idx, face_id in enumerate(face_ids):

@@ -9,17 +9,6 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 
-def extract_audio_np(video_path, target_sr=16000):
-    out, _ = (
-        ffmpeg.input(video_path)
-        .output("pipe:", format="wav", ac=1, ar=str(target_sr))
-        .run(capture_stdout=True, capture_stderr=True)
-    )
-    audio, sr = sf.read(io.BytesIO(out))
-    assert sr == target_sr
-    return audio, sr
-
-
 def cosine_similarity(a, b):
     return 1 - cdist([a], [b], metric="cosine")[0][0]
 
@@ -46,6 +35,17 @@ def match_speakers_to_profiles(chunk_embeds, global_profiles, threshold=0.9):
 def split_audio(wav, sr, chunk_duration=60):
     chunk_len = chunk_duration * sr
     return [wav[i:i + chunk_len] for i in range(0, len(wav), chunk_len)]
+
+
+def extract_audio_np(video_path, target_sr=16000):
+    out, _ = (
+        ffmpeg.input(video_path)
+        .output("pipe:", format="wav", ac=1, ar=str(target_sr))
+        .run(capture_stdout=True, capture_stderr=True)
+    )
+    audio, sr = sf.read(io.BytesIO(out))
+    assert sr == target_sr
+    return audio, sr
 
 
 def diarize(video_path, n_speakers=2):

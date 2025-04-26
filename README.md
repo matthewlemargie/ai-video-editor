@@ -7,7 +7,7 @@ appropriate for TikTok/Instagram Reels/etc.
 The program uses a mix of speaker diarization, face embeddings,
 shot change tracking, and speech-to-text to edit videos.
 
-How to use:
+## How to Use
 
 Create conda environment with:
 
@@ -15,9 +15,13 @@ Create conda environment with:
 
 Then run main.py on a video specifying number of speakers and faces:
 
-`python main.py --video-path path/to/video.mp4 --n-speakers 3 --max-num-faces 3`
+`python main.py --video-path path/to/video.mp4 --n-speakers 2 --max-num-faces 2`
 
-Here is an example of a video edited by the script:
+Add tag `--add-subtitles` to output edited video with subtitles
+
+The output video can be found in the output directory
+
+### Example
 
 ![Input Example](examples/input.gif)
 

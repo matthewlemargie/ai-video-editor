@@ -4,6 +4,8 @@
 /output
 /cache
 
+combine_side_by_side.py
+combine_top_bottom.py
 notes.txt
 liptrack.py
 liptrack1.py

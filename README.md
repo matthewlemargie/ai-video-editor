@@ -23,6 +23,8 @@ The output video can be found in the output directory
 
 ### Example
 
+[Example output with audio](https://www.youtube.com/watch?v=e0QwOcsAZ28)
+
 ![Input Example](examples/input.gif)
 
 ![Output Example](examples/output.gif)

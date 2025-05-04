@@ -4,6 +4,7 @@ import threading
 import argparse
 from pathlib import Path
 import os
+import time
 
 from editor import TikTokEditor
 
@@ -14,6 +15,7 @@ parser.add_argument("--n-speakers", type=int, default=2, help="number of speaker
 parser.add_argument("--show-video", action="store_true", help="Shows video while doing face detection/embeddings")
 parser.add_argument("--word-timestamps", action="store_true", help="Creates subtitles by word instead of by sentence")
 parser.add_argument("--add-subtitles", action="store_true", help="Add subtitles to output video")
+parser.add_argument("--blender-prep", action="store_true", help="Create json for editing clip in blender")
 
 
 args = parser.parse_args()
@@ -26,7 +28,9 @@ else:
 
 editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args.show_video, args.word_timestamps)
 editor.analyze()
-if args.add_subtitles:
+if args.blender_prep:
+    editor.prepare_for_blender()
+elif args.add_subtitles:
     editor.edit_w_subtitles()
 else:
     editor.edit()

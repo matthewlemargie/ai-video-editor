@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
+import time
 
 from gui import GUI
 from diarize import diarize
-from faces import create_face_ids
+from faces import create_face_ids, create_face_ids_mtcnn
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
@@ -40,6 +41,11 @@ def stringify_keys(d):
     return {str(k): v for k, v in d.items()}
 
 
+def remove_duplicates(seq):
+    seen = set()
+    return [x for x in seq if not (x in seen or seen.add(x))]
+
+
 def parse_keys_to_tuples(d):
     def try_tuple(k):
         if k.startswith("(") and k.endswith(")"):
@@ -55,8 +61,6 @@ class TikTokEditor:
     def __init__(self, video_path, n_speakers, max_num_faces, show_video, word_subtitles):
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
-        # os.makedirs("subtitles_cache", exist_ok=True)
-        # os.makedirs("face_db_cache", exist_ok=True)
 
         self.n_speakers = n_speakers
         self.max_num_faces = max_num_faces
@@ -68,6 +72,7 @@ class TikTokEditor:
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
         self.segments_path = os.path.join("cache", f"{Path(self.video_path).stem}_segments.json")
+        self.blend_path = os.path.join("cache", f"{Path(self.video_path).stem}_blend.json")
         self.subtitle_path = os.path.join("cache", f"{self.video_title}.srt")
         self.face_db_path = os.path.join("cache", f"{self.video_title}_face_db.json")
         self.shots_path = os.path.join("cache", f"{self.video_title}_shots.json")
@@ -89,7 +94,7 @@ class TikTokEditor:
             with open(self.shots_path, "r") as f:
                 self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
-            self.face_db, self.shot_segments = create_face_ids(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+            self.face_db, self.shot_segments = create_face_ids_mtcnn(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
             with open(self.shots_path, "w") as f:
@@ -98,6 +103,7 @@ class TikTokEditor:
         self.gui = GUI(self.video_path)
         self.gui.match_faces_to_voices(self.face_db, self.speaker_segments)
         self.combine_speakers_faces()
+
 
 
     def edit(self):
@@ -144,6 +150,77 @@ class TikTokEditor:
                 new_db[id] = (v[1]/v[0], v[2]/v[0])
             self.shot_segments[segment] = new_db
 
+    def prepare_for_blender(self):
+        cap = cv2.VideoCapture(self.video_path)
+
+        # Get video properties
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+
+        # Calculate new width for 9:16 aspect ratio
+        new_width = int(math.ceil(height * (9 / 16)))
+        output_size = (new_width, height)
+
+        blend = []
+
+        timeline_index = 0
+        for segment, face_db in self.shot_segments.items():
+            start, end = segment
+            boxes = {}
+            for id, box in face_db.items():
+                box = (box[0] - new_width//2, box[0] + new_width//2)
+                boxes[id] = box
+
+            for i in tqdm(range(start, end + 1)):
+                time_sec = (i - 1) / fps
+
+                # Determine current speaker
+                while timeline_index < len(self.speaker_segments):
+                    speaker_id, s, e = self.speaker_segments[timeline_index]
+                    if s <= time_sec <= e:
+                        current_speaker = speaker_id
+                        break
+                    elif time_sec > e:
+                        timeline_index += 1
+                    else:
+                        break
+
+                # edit by camera switching
+                # edit by diarization if more than one face in shot
+                # if only one face on screen, default to singular face
+                # (helps with choppy diarization from quick speaking etc.)
+                ids_list = list(face_db.keys())
+                if ids_list:
+                    if len(ids_list) == 1:
+                        face_id = list(face_db.keys())[0] 
+                    else:
+                        face_id = self.ids_dict.get(current_speaker)
+                    bbox = boxes.get(face_id)
+                else:
+                    bbox = False
+
+                if bbox:
+                    x1, x2 = bbox
+                else:
+                    # default to middle of screen if no faces
+                    x1, x2 = width//2 - new_width//2, width//2 + new_width//2
+
+                # Handle cases where faces are too close to edge
+                if x2 > width:
+                    x1 = width-new_width
+                    x2 = int(width)
+                elif x1 < 0:
+                    x1 = 0
+                    x2 = new_width
+
+                blend.append((i, 0, height, int(x1), int(x2)))
+
+        blend = remove_duplicates(blend)
+        with open(self.blend_path, "w") as f:
+            json.dump(blend, f, indent=4)
+
 
     def crop_video_on_speaker_bbox_static(self):
         cap = cv2.VideoCapture(self.video_path)
@@ -161,10 +238,8 @@ class TikTokEditor:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(self.output_path, fourcc, fps, output_size)
 
-        self.shot_segments = list(self.shot_segments.items())
-
         timeline_index = 0
-        for segment, face_db in self.shot_segments:
+        for segment, face_db in self.shot_segments.items():
             start, end = segment
             boxes = {}
             for id, box in face_db.items():

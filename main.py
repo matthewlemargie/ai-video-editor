@@ -16,6 +16,7 @@ parser.add_argument("--show-video", action="store_true", help="Shows video while
 parser.add_argument("--word-timestamps", action="store_true", help="Creates subtitles by word instead of by sentence")
 parser.add_argument("--add-subtitles", action="store_true", help="Add subtitles to output video")
 parser.add_argument("--blender-prep", action="store_true", help="Create json for editing clip in blender")
+parser.add_argument("--delete-cache", action="store_true", help="Delete cache for input video and start fresh")
 
 
 args = parser.parse_args()
@@ -26,7 +27,7 @@ if torch.cuda.is_available():
 else:
     print("⚡ CUDA/GPU is not available, running on CPU.")
 
-editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args.show_video, args.word_timestamps)
+editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args.show_video, args.word_timestamps, args.delete_cache)
 editor.analyze()
 if args.blender_prep:
     editor.prepare_for_blender()

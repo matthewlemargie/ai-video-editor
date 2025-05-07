@@ -8,10 +8,11 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 import time
+import re
 
 from gui import GUI
 from diarize import diarize
-from faces import create_face_ids, create_face_ids_mtcnn
+from faces import create_face_ids_mediapipe, create_face_ids_mtcnn
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
@@ -46,6 +47,13 @@ def remove_duplicates(seq):
     return [x for x in seq if not (x in seen or seen.add(x))]
 
 
+def delete_files_by_regex(directory, pattern):
+    regex = re.compile(pattern)
+    for file in Path(directory).iterdir():
+        if file.is_file() and regex.match(file.name):
+            file.unlink()
+
+
 def parse_keys_to_tuples(d):
     def try_tuple(k):
         if k.startswith("(") and k.endswith(")"):
@@ -58,16 +66,19 @@ def parse_keys_to_tuples(d):
 
 
 class TikTokEditor:
-    def __init__(self, video_path, n_speakers, max_num_faces, show_video, word_subtitles):
+    def __init__(self, video_path, n_speakers, max_num_faces, show_video, word_subtitles, delete_cache):
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
+
+        self.video_path = video_path
+        self.video_title = Path(video_path).stem
+        if delete_cache:
+            delete_files_by_regex("cache", self.video_title)
 
         self.n_speakers = n_speakers
         self.max_num_faces = max_num_faces
         self.show_video = show_video
-        self.video_path = video_path
         self.word_subtitles = word_subtitles
-        self.video_title = Path(video_path).stem
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
@@ -200,6 +211,7 @@ class TikTokEditor:
                     bbox = boxes.get(face_id)
                 else:
                     bbox = False
+                    print("no bbox")
 
                 if bbox:
                     x1, x2 = bbox

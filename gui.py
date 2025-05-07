@@ -60,7 +60,7 @@ class GUI:
         faces_frame.pack(padx=10, pady=10)
 
         # columns = int(ceil(sqrt(len(face_ids))))
-        columns = 6
+        columns = 9
         self.entry_boxes = {}
 
         for idx, face_id in enumerate(face_ids):

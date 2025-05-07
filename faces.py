@@ -9,7 +9,7 @@ import torch
 import os
 import math
 from tqdm import tqdm
-from time import time
+import time
 
 from framediff import is_shot_change
 
@@ -20,7 +20,8 @@ def generate_id():
 
 def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
     # Setup
-    threshold = 0.6  # Cosine similarity threshold for identity matching
+    embed_threshold = 0.7  # Cosine similarity threshold for identity matching
+    face_prob_threshold = 0.999
     # Face embedding model
     model_name = 'Facenet'
     model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
@@ -38,26 +39,22 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
     position_db = {}
     shot_segments = {}
 
-    skip_frames = 0
-
     prev = None
-
     last_change_frame = 1
-
     buffer = []
+    MAX_BUF_LEN = 256
 
     for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
         ret, frame = cap.read()
         if not ret:
             break
-        height = 720
+        height = 360
         h, w = frame.shape[:2]
         scale = height / h
         new_w = int(w * scale)
         resized_frame = cv2.resize(frame, (new_w, height))
         rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
         pil_frame = Image.fromarray(rgb_frame)
-        buffer.append(pil_frame)
 
         if prev is not None:
             shot_change = is_shot_change(prev, frame)
@@ -66,22 +63,26 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
 
         prev = frame
 
+        buffer.append((shot_change, pil_frame, rgb_frame))
 
-        if len(buffer) == 128 or shot_change:
-            if shot_change:
-                shot_segments[(last_change_frame, i)] = position_db.copy()
-                position_db = {}
-                last_change_frame = i + 1
-            boxes_list, probs_list = mtcnn.detect(buffer)
-            # boxes, probs = mtcnn.detect(rgb_frame)
+        if len(buffer) == MAX_BUF_LEN:
+            boxes_list, probs_list = mtcnn.detect([x[1] for x in buffer])
 
             batch = list(zip(boxes_list, probs_list))
 
-            for boxes, probs in batch:
+            for batch_idx, (boxes, probs) in enumerate(batch):
+                buffer_shot_change = buffer[batch_idx][0]
+                if buffer_shot_change:
+                    shot_segments[(last_change_frame, i - (MAX_BUF_LEN - batch_idx) + 1)] = position_db.copy()
+                    position_db = {}
+                    last_change_frame = i - (MAX_BUF_LEN - batch_idx) + 1 + 1
+
+                if boxes is None or len(boxes) == 0:
+                    continue
 
                 face_boxes = []
                 for j, box in enumerate(boxes):
-                    if probs[j] > 0.7:
+                    if probs[j] > face_prob_threshold:
                         face_boxes.append(box)
 
                 boxes = face_boxes
@@ -90,34 +91,32 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
                 faces = []
                 faces_poses = []
 
-                if boxes is not None:
-                    for box in boxes:
+                if face_boxes is not None:
+                    for box in face_boxes:
                         x1, y1, x2, y2 = box
-                        x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
+                        # x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
 
                         # Padding for better crop
-                        pad = 50
+                        pad = 10
 
-                        x1 = max(0, int(x1 - pad))
-                        y1 = max(0, int(y1 - pad))
-                        x2 = min(w, int(x2 + pad))
-                        y2 = min(h, int(y2 + pad))
+                        x1 = max(0, min(w - 1, x1 - pad))
+                        y1 = max(0, min(h - 1, y1 - pad))
+                        x2 = max(0, min(w, x2 + pad))
+                        y2 = max(0, min(h, y2 + pad))
 
-                        face_crop = frame[int(y1):int(y2), int(x1):int(x2)]
+                        frame_for_box = buffer[batch_idx][2][:, :, ::-1]
+                        face_crop = frame_for_box[int(y1):int(y2), int(x1):int(x2)]
+
+                        if face_crop.size == 0 or face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
+                            continue  # skip this face box
 
                         dim = (224, 224)
-
                         face_crop = cv2.resize(face_crop, dim, interpolation=cv2.INTER_AREA)
                         faces.append(face_crop)
                         face_crop_tensor = torch.from_numpy(face_crop).permute(2, 0, 1).float()  # Convert to (C, H, W)
                         face_crops.append(face_crop_tensor)
+                        x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
                         faces_poses.append((x1, x2, y1, y2))
-                        # Draw box + ID
-                        if show_video:
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.putText(frame, f"ID: {matched_id}", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
 
                 face_crops = np.array(face_crops)
                 if face_crops.size > 0:
@@ -140,7 +139,7 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
                         for face_id, (prev_embedding, _) in embed_db.items():
                             # Ensure both embeddings are numpy arrays
                             sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
-                            if sim > threshold:
+                            if sim > embed_threshold:
                                 matched_id = face_id
                                 break
 
@@ -164,7 +163,7 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
                         # Draw box + ID
                         if show_video:
                             cv2.rectangle(frame, (faces_poses[j][0], faces_poses[j][2]), (faces_poses[j][1], faces_poses[j][3]), (0, 255, 0), 2)
-                            cv2.putText(frame, f"ID: {matched_id}", (x1, y1 - 10),
+                            cv2.putText(frame, f"ID: {matched_id}", (faces_poses[j][0], faces_poses[j][1] - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             buffer.clear()
         if show_video:
@@ -181,7 +180,7 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
     return embed_db, shot_segments
 
 
-def create_face_ids(video_path, max_num_faces, show_video):
+def create_face_ids_mediapipe(video_path, max_num_faces, show_video):
     # Setup
     threshold = 0.6  # Cosine similarity threshold for identity matching
     model_name = 'Facenet'

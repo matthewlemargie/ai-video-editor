@@ -17,7 +17,7 @@ parser.add_argument("--word-timestamps", action="store_true", help="Creates subt
 parser.add_argument("--add-subtitles", action="store_true", help="Add subtitles to output video")
 parser.add_argument("--blender-prep", action="store_true", help="Create json for editing clip in blender")
 parser.add_argument("--delete-cache", action="store_true", help="Delete cache for input video and start fresh")
-
+parser.add_argument("--edit", action="store_true", help="Edit video without exporting to blender for further editing")
 
 args = parser.parse_args()
 
@@ -31,7 +31,8 @@ editor = TikTokEditor(args.video_path, args.n_speakers, args.max_num_faces, args
 editor.analyze()
 if args.blender_prep:
     editor.prepare_for_blender()
-elif args.add_subtitles:
-    editor.edit_w_subtitles()
-else:
-    editor.edit()
+if args.edit:
+    if args.add_subtitles:
+        editor.edit_w_subtitles()
+    else:
+        editor.edit()

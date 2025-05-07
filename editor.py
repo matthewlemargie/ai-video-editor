@@ -123,10 +123,10 @@ class TikTokEditor:
         subprocess.run(["mpv", self.output_final_path, "--volume=60"])
 
 
-    def edit_w_subtitles(self):
+    def edit_w_subtitles(self, blender_prep):
         self.crop_video_on_speaker_bbox_static()
         self.extract_audio_and_apply_to_video()
-        self.create_subtitle_video()
+        self.add_subs_to_video()
         subprocess.run(["mpv", self.output_final_subtitled_path, "--volume=60"])
 
 
@@ -232,6 +232,7 @@ class TikTokEditor:
         blend = remove_duplicates(blend)
         with open(self.blend_path, "w") as f:
             json.dump(blend, f, indent=4)
+        self.create_subtitles()
 
 
     def crop_video_on_speaker_bbox_static(self):
@@ -310,12 +311,14 @@ class TikTokEditor:
         print("Done writing:", self.output_path)
 
 
-    def create_subtitle_video(self):
+    def create_subtitles(self):
         if self.word_subtitles:
-            generate_word_srt(self.output_final_path, self.subtitle_path)
+            generate_word_srt(self.video_path, self.subtitle_path)
         else:
-            generate_sentence_srt(self.output_final_path, self.subtitle_path)
+            generate_sentence_srt(self.video_path, self.subtitle_path)
 
+
+    def add_subs_to_video(self):
         add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
         os.remove(self.output_final_path)
 

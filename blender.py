@@ -4,6 +4,7 @@ import json
 import site
 import sys
 from pathlib import Path
+import re
 
 conda_site_packages = "/opt/anaconda/envs/editor/lib/python3.10/site-packages"
 
@@ -13,8 +14,9 @@ if conda_site_packages not in sys.path:
     site.addsitedir(conda_site_packages)
 
 import ffmpeg
+cache_dir = "/home/dmac/Documents/projects2025/ai-video-editor/cache"
 input_dir = "/home/dmac/Documents/projects2025/ai-video-editor/inputvids/"
-video_file = "vip_edit4.mp4"
+video_file = "kylejesse_edit1.mp4"
  
 # === CONFIGURATION ===
 video_path = input_dir + video_file
@@ -23,6 +25,60 @@ blend_path = f"/home/dmac/Documents/projects2025/ai-video-editor/cache/{filename
 start_frame = 0
 audio_channel = 1
 channel = 2
+
+def timecode_to_frame(timecode, fps):
+    h, m, s_ms = timecode.split(":")
+    s, ms = s_ms.split(",")
+    total_seconds = int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000
+    return int(total_seconds * fps)
+
+def parse_srt(srt_path):
+    with open(srt_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    entries = content.strip().split("\n\n")
+    subtitles = []
+    for entry in entries:
+        lines = entry.strip().split("\n")
+        if len(lines) >= 3:
+            time_match = re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", lines[1])
+            if time_match:
+                start, end = time_match.groups()
+                text = " ".join(lines[2:])
+                subtitles.append((start, end, text))
+    return subtitles
+
+
+def get_video_fps():
+    for s in bpy.context.scene.sequence_editor.sequences_all:
+        if s.type == 'MOVIE':
+            return s.fps if hasattr(s, 'fps') else bpy.context.scene.render.fps
+    return bpy.context.scene.render.fps
+
+
+def add_subtitles_to_vse(srt_path):
+    fps = get_video_fps()
+    subtitles = parse_srt(srt_path)
+    seq = bpy.context.scene.sequence_editor_create()
+
+    for idx, (start_tc, end_tc, text) in enumerate(subtitles):
+        start_frame = timecode_to_frame(start_tc, fps)
+        end_frame = timecode_to_frame(end_tc, fps)
+        duration = end_frame - start_frame
+
+        text_strip = seq.sequences.new_effect(
+            name=f"Sub_{idx}",
+            type='TEXT',
+            channel=3,
+            frame_start=start_frame,
+            frame_end=end_frame
+        )
+        text_strip.text = text
+        text_strip.font_size = 56
+        text_strip.use_shadow = True
+        text_strip.use_outline = True
+        text_strip.use_box = True
+        text_strip.location = (0.5, 0.3)  # normalized location (x, y)
 
 
 probe = ffmpeg.probe(video_path)
@@ -83,6 +139,5 @@ for frame_idx, bottom, top, left, right in blend:
 
 bpy.context.scene.frame_end = end - 1
 
-# Remove the video strip but keep the audio
-# audio_strip = movie_strip.sound  # Access the audio that comes with the movie strip
-# audio_strip.channel = channel
+add_subtitles_to_vse(os.path.join(cache_dir, f"{filename}.srt"))
+

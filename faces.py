@@ -17,7 +17,7 @@ from framediff import is_shot_change
 def generate_id():
     return str(uuid.uuid4())[:8]
 
-def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
+def create_face_ids_mtcnn(video_path):
     # Setup
     embed_threshold = 0.7  # Cosine similarity threshold for identity matching
     face_prob_threshold = 0.999
@@ -158,17 +158,7 @@ def create_face_ids_mtcnn(video_path, max_num_faces, show_video):
                             x_avg_count = position_db[matched_id][1]
                             y_avg_count = position_db[matched_id][2]
                             position_db[matched_id] = (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg)
-
-                        # Draw box + ID
-                        if show_video:
-                            cv2.rectangle(frame, (faces_poses[j][0], faces_poses[j][2]), (faces_poses[j][1], faces_poses[j][3]), (0, 255, 0), 2)
-                            cv2.putText(frame, f"ID: {matched_id}", (faces_poses[j][0], faces_poses[j][1] - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             buffer.clear()
-        if show_video:
-            cv2.imshow("MediaPipe + DeepFace", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
 
     if position_db is not {}:
         shot_segments[(last_change_frame, total_frames)] = position_db.copy()

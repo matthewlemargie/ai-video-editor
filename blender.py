@@ -6,26 +6,6 @@ import sys
 from pathlib import Path
 import re
 
-conda_site_packages = "/opt/anaconda/envs/editor/lib/python3.10/site-packages"
-
-# Add to sys.path if not already present
-if conda_site_packages not in sys.path:
-    sys.path.append(conda_site_packages)
-    site.addsitedir(conda_site_packages)
-
-import ffmpeg
-cache_dir = "/home/dmac/Documents/projects2025/ai-video-editor/cache"
-input_dir = "/home/dmac/Documents/projects2025/ai-video-editor/inputvids/"
-video_file = "kylejesse_edit1.mp4"
- 
-# === CONFIGURATION ===
-video_path = input_dir + video_file
-filename = Path(video_path).stem
-blend_path = f"/home/dmac/Documents/projects2025/ai-video-editor/cache/{filename}_blend.json"  # <-- Replace with your actual file
-start_frame = 0
-audio_channel = 1
-channel = 2
-
 def timecode_to_frame(timecode, fps):
     h, m, s_ms = timecode.split(":")
     s, ms = s_ms.split(",")
@@ -48,23 +28,17 @@ def parse_srt(srt_path):
                 subtitles.append((start, end, text))
     return subtitles
 
-
-def get_video_fps():
-    for s in bpy.context.scene.sequence_editor.sequences_all:
-        if s.type == 'MOVIE':
-            return s.fps if hasattr(s, 'fps') else bpy.context.scene.render.fps
-    return bpy.context.scene.render.fps
-
-
-def add_subtitles_to_vse(srt_path):
-    fps = get_video_fps()
+def add_subtitles_to_vse(srt_path, fps):
     subtitles = parse_srt(srt_path)
     seq = bpy.context.scene.sequence_editor_create()
 
     for idx, (start_tc, end_tc, text) in enumerate(subtitles):
-        start_frame = timecode_to_frame(start_tc, fps)
-        end_frame = timecode_to_frame(end_tc, fps)
+        start_frame = timecode_to_frame(start_tc, fps) + 1
+        end_frame = timecode_to_frame(end_tc, fps) + 1
         duration = end_frame - start_frame
+
+        if end_frame <= start_frame:
+            end_frame = start_frame + 1
 
         text_strip = seq.sequences.new_effect(
             name=f"Sub_{idx}",
@@ -80,20 +54,27 @@ def add_subtitles_to_vse(srt_path):
         text_strip.use_box = True
         text_strip.location = (0.5, 0.3)  # normalized location (x, y)
 
-
-probe = ffmpeg.probe(video_path)
-video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
-r_frame_rate = video_stream['r_frame_rate']  # e.g., "30000/1001"
-
-num, den = map(int, r_frame_rate.split('/'))
+with open(".last_video.txt", "r") as f:
+    video_path = f.readline().strip()
+    blend_path = f.readline().strip()
+    subtitles_path = f.readline().strip()
+    num = int(f.readline().strip())
+    den = int(f.readline().strip())
+    width = int(f.readline().strip())
+    height = int(f.readline().strip())
+    
+filename = Path(video_path).stem
+start_frame = 0
+audio_channel = 1
+channel = 2
 
 scene = bpy.context.scene
 
 scene.render.fps = num
 scene.render.fps_base = den
 
-bpy.context.scene.render.resolution_x = 608
-bpy.context.scene.render.resolution_y = 1080
+bpy.context.scene.render.resolution_x = width
+bpy.context.scene.render.resolution_y = height
 
 # Create Sequence Editor if it doesn't exist
 if not scene.sequence_editor:
@@ -103,7 +84,7 @@ audio_strip = scene.sequence_editor.sequences.new_sound(
     name="MyAudio",
     filepath=video_path,  # Same file as the video
     channel=audio_channel,
-    frame_start=start_frame
+    frame_start=1
 )
 
 audio_strip.volume  = 0.6
@@ -123,7 +104,7 @@ for frame_idx, bottom, top, left, right in blend:
             name="MyVideo",
             filepath=video_path, 
             channel=channel,
-            frame_start=0
+            frame_start=1
         )
         movie_strip.frame_offset_start = start - 1
         if frame_idx != len(blend):
@@ -139,5 +120,4 @@ for frame_idx, bottom, top, left, right in blend:
 
 bpy.context.scene.frame_end = end - 1
 
-add_subtitles_to_vse(os.path.join(cache_dir, f"{filename}.srt"))
-
+add_subtitles_to_vse(subtitles_path, num / den)

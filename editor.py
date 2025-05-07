@@ -9,10 +9,11 @@ import numpy as np
 from tqdm import tqdm
 import time
 import re
+import ffmpeg
 
 from gui import GUI
 from diarize import diarize
-from faces import create_face_ids_mediapipe, create_face_ids_mtcnn
+from faces import create_face_ids_mtcnn
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
@@ -24,6 +25,7 @@ def convert_to_serializable(obj):
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     return str(obj)
+
 
 def make_json_serializable(data):
     serializable = {}
@@ -66,28 +68,38 @@ def parse_keys_to_tuples(d):
 
 
 class TikTokEditor:
-    def __init__(self, video_path, n_speakers, max_num_faces, show_video, word_subtitles, delete_cache):
+    def __init__(self, video_path, n_speakers, word_subtitles, delete_cache):
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
 
         self.video_path = video_path
         self.video_title = Path(video_path).stem
+        probe = ffmpeg.probe(video_path)
+        video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+        r_frame_rate = video_stream['r_frame_rate']  # e.g., "30000/1001"
+        num, den = map(int, r_frame_rate.split('/'))
+
         if delete_cache:
             delete_files_by_regex("cache", self.video_title)
 
         self.n_speakers = n_speakers
-        self.max_num_faces = max_num_faces
-        self.show_video = show_video
         self.word_subtitles = word_subtitles
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
-        self.segments_path = os.path.join("cache", f"{Path(self.video_path).stem}_segments.json")
-        self.blend_path = os.path.join("cache", f"{Path(self.video_path).stem}_blend.json")
+        self.segments_path = os.path.join("cache", f"{self.video_title}_segments.json")
+        self.blend_path = os.path.join("cache", f"{self.video_title}_blend.json")
         self.subtitle_path = os.path.join("cache", f"{self.video_title}.srt")
         self.face_db_path = os.path.join("cache", f"{self.video_title}_face_db.json")
         self.shots_path = os.path.join("cache", f"{self.video_title}_shots.json")
         self.ids_dict = {}
+
+        with open(".last_video.txt", "w") as f:
+            f.write(str(Path(self.video_path).resolve()) + "\n")
+            f.write(str(Path(self.blend_path).resolve()) + "\n")
+            f.write(str(Path(self.subtitle_path).resolve()) + "\n")
+            f.write(str(num) + "\n")
+            f.write(str(den) + "\n")
 
 
     def analyze(self):
@@ -105,7 +117,7 @@ class TikTokEditor:
             with open(self.shots_path, "r") as f:
                 self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
-            self.face_db, self.shot_segments = create_face_ids_mtcnn(self.video_path, max_num_faces=self.max_num_faces, show_video=self.show_video)
+            self.face_db, self.shot_segments = create_face_ids_mtcnn(self.video_path)
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
             with open(self.shots_path, "w") as f:
@@ -161,6 +173,7 @@ class TikTokEditor:
                 new_db[id] = (v[1]/v[0], v[2]/v[0])
             self.shot_segments[segment] = new_db
 
+
     def prepare_for_blender(self):
         cap = cv2.VideoCapture(self.video_path)
 
@@ -173,6 +186,10 @@ class TikTokEditor:
         # Calculate new width for 9:16 aspect ratio
         new_width = int(math.ceil(height * (9 / 16)))
         output_size = (new_width, height)
+
+        with open(".last_video.txt", "a") as f:
+            f.write(str(new_width) + "\n")
+            f.write(str(height) + "\n")
 
         blend = []
 
@@ -232,6 +249,7 @@ class TikTokEditor:
         blend = remove_duplicates(blend)
         with open(self.blend_path, "w") as f:
             json.dump(blend, f, indent=4)
+
         self.create_subtitles()
 
 

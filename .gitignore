@@ -4,6 +4,7 @@
 /output
 /cache
 
+.last_video.txt
 combine_side_by_side.py
 combine_top_bottom.py
 notes.txt

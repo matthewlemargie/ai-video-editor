@@ -68,7 +68,7 @@ def parse_keys_to_tuples(d):
 
 
 class TikTokEditor:
-    def __init__(self, video_path, n_speakers, word_subtitles, delete_cache):
+    def __init__(self, video_path, n_speakers, embed_threshold, word_subtitles, delete_cache):
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
 
@@ -84,6 +84,7 @@ class TikTokEditor:
             delete_files_by_regex("cache", self.video_title)
 
         self.n_speakers = n_speakers
+        self.embed_threshold = embed_threshold
         self.word_subtitles = word_subtitles
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
@@ -118,7 +119,7 @@ class TikTokEditor:
             with open(self.shots_path, "r") as f:
                 self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
-            self.face_db, self.shot_segments = FaceIDModel(self.video_path).run()
+            self.face_db, self.shot_segments = FaceIDModel(self.video_path, embed_threshold=self.embed_threshold).run()
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
             with open(self.shots_path, "w") as f:
@@ -254,6 +255,18 @@ class TikTokEditor:
         self.create_subtitles()
 
 
+    def create_subtitles(self):
+        if self.word_subtitles:
+            generate_word_srt(self.video_path, self.subtitle_path)
+        else:
+            generate_sentence_srt(self.video_path, self.subtitle_path)
+
+
+    def add_subs_to_video(self):
+        add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
+        os.remove(self.output_final_path)
+
+
     def crop_video_on_speaker_bbox_static(self):
         cap = cv2.VideoCapture(self.video_path)
 
@@ -328,18 +341,6 @@ class TikTokEditor:
         cap.release()
         out.release()
         print("Done writing:", self.output_path)
-
-
-    def create_subtitles(self):
-        if self.word_subtitles:
-            generate_word_srt(self.video_path, self.subtitle_path)
-        else:
-            generate_sentence_srt(self.video_path, self.subtitle_path)
-
-
-    def add_subs_to_video(self):
-        add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
-        os.remove(self.output_final_path)
 
 
     def extract_audio_and_apply_to_video(self):

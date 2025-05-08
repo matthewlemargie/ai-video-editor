@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from facenet_pytorch import InceptionResnetV1, MTCNN
 from PIL import Image
+from sklearn.cluster import KMeans, AgglomerativeClustering, MeanShift
+from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
 import uuid
 import torch
@@ -20,7 +22,7 @@ def generate_id():
 
  
 class FaceIDModel:
-    def __init__(self, video_path, height=360, embed_threshold=0.7, face_prob_threshold=0.999):
+    def __init__(self, video_path, height=360, embed_threshold=0.4, face_prob_threshold=0.999):
         self.video_path = video_path
         self.embed_threshold = embed_threshold
         self.face_prob_threshold = face_prob_threshold
@@ -146,6 +148,52 @@ class FaceIDModel:
         # final segment
         self.shot_segments[(self.last_change_frame, self.total_frames)] = self.position_db.copy()
         self.cap.release()
+
+        embeddings = np.array([x[0] for x in self.embed_db.values()])
+        ids = np.array(list(self.embed_db.keys()))
+
+        labels = []
+
+        # labels = AgglomerativeClustering().fit_predict(embeddings)
+        # labels = kmeans_grid_search(embeddings)
+        # labels = MeanShift().fit_predict(embeddings)
+
+        combine_dict = {}
+
+        # Build a map of main_id -> list of ids to merge into it
+        for label in set(labels):
+            idxs = np.where(labels == label)[0]
+            if len(idxs) < 2:
+                continue  # Skip singleton clusters
+
+            first_idx = int(idxs[0])
+            rest_idxs = idxs[1:]
+
+            main_id = ids[first_idx]
+            replace_ids = [ids[i] for i in rest_idxs]
+
+            combine_dict[main_id] = replace_ids
+
+            # Delete merged IDs from embed_db
+            for rid in replace_ids:
+                if rid in self.embed_db:
+                    del self.embed_db[rid]
+
+        # Merge position data in each shot segment
+        for (start, end), face_db in self.shot_segments.items():
+            for main_id, replace_ids in combine_dict.items():
+                if main_id not in face_db:
+                    continue
+                m_cnt, m_xs, m_ys = face_db[main_id]
+                for rid in replace_ids:
+                    if rid in face_db:
+                        r_cnt, r_xs, r_ys = face_db[rid]
+                        m_cnt += r_cnt
+                        m_xs += r_xs
+                        m_ys += r_ys
+                        del face_db[rid]
+                face_db[main_id] = (m_cnt, m_xs, m_ys)
+
         return self.embed_db, self.shot_segments
 
 

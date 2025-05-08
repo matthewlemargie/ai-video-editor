@@ -121,3 +121,5 @@ for frame_idx, bottom, top, left, right in blend:
 bpy.context.scene.frame_end = end - 1
 
 add_subtitles_to_vse(subtitles_path, num / den)
+
+print("Successfully imported video with editing data")

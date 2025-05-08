@@ -4,7 +4,7 @@ import numpy as np
 import os
 import sys
 import tkinter as tk
-import tkinter.simpledialog as sd
+from tkinter import font
 from PIL import Image, ImageTk
 import simpleaudio as sa
 import pygame
@@ -82,8 +82,12 @@ class GUI:
             img_label.image = tk_img
             img_label.pack()
 
+            custom_font = font.Font(self.root, family="Arial", size=24)
+
             entry = tk.Entry(face_column)
+            entry.configure(font=custom_font)
             entry.pack()
+
             self.entry_boxes[face_id] = entry
 
         audios_frame = tk.Frame(self.root, padx=10, pady=10)

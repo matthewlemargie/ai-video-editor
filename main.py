@@ -6,9 +6,9 @@ from editor import TikTokEditor
 parser = argparse.ArgumentParser(description="AI-video-editor")
 parser.add_argument("--video-path", type=str, default="", help="Path to video to be edited")
 parser.add_argument("--n-speakers", type=int, default=2, help="number of speakers in the video")
+parser.add_argument("--threshold", type=float, default=0.4, help="Threshold for cosine similarity of face embeddings")
 parser.add_argument("--add-subtitles", action="store_true", help="Add subtitles to output video")
 parser.add_argument("--word-timestamps", action="store_true", help="Creates subtitles by word instead of by sentence")
-parser.add_argument("--blender-prep", action="store_true", help="Create json for editing clip in blender")
 parser.add_argument("--edit", action="store_true", help="Edit video without exporting to blender for further editing")
 parser.add_argument("--delete-cache", action="store_true", help="Delete cache for input video and start fresh")
 
@@ -16,14 +16,16 @@ args = parser.parse_args()
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    print("🚀 CUDA/GPU is being used for processing.")
+    print("CUDA/GPU is being used for processing.")
 else:
-    print("⚡ CUDA/GPU is not available, running on CPU.")
+    print("CUDA/GPU is not available, running on CPU.")
 
-editor = TikTokEditor(args.video_path, args.n_speakers, args.word_timestamps, args.delete_cache)
+editor = TikTokEditor(args.video_path, args.n_speakers, args.threshold, args.word_timestamps, args.delete_cache)
 editor.analyze()
-if args.blender_prep:
-    editor.prepare_for_blender()
+editor.prepare_for_blender()
+print("Successfully created cache file for importing to Blender")
+print("Open blender from source directory in terminal and run blender.py in Text Editor")
+
 if args.edit:
     if args.add_subtitles:
         editor.edit_w_subtitles()

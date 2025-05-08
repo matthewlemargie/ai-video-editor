@@ -13,445 +13,322 @@ import threading
 
 from framediff import is_shot_change
 
+MAX_BUF_LEN = 256
 
 def generate_id():
     return str(uuid.uuid4())[:8]
 
+ 
+class FaceIDModel:
+    def __init__(self, video_path, height=360, embed_threshold=0.7, face_prob_threshold=0.999):
+        self.video_path = video_path
+        self.embed_threshold = embed_threshold
+        self.face_prob_threshold = face_prob_threshold
 
-def create_face_ids_mtcnn(video_path):
-    # Setup
-    embed_threshold = 0.7  # Cosine similarity threshold for identity matching
-    face_prob_threshold = 0.999
-    # Face embedding model
-    model_name = 'Facenet'
-    model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
+        # Device
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # Face detection model
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    mtcnn = MTCNN(keep_all=True, device=device)
+        # Models
+        self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        self.mtcnn = MTCNN(keep_all=True, device=self.device)
 
-    # Video input
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Video capture
+        self.cap = cv2.VideoCapture(video_path)
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.scale = height / self.h
+        self.new_w = int(self.w * self.scale)
 
-    # Track embeddings + IDs
-    embed_db = {}
-    position_db = {}
-    shot_segments = {}
+        # State
+        self.embed_db = {}
+        self.position_db = {}
+        self.shot_segments = {}
+        self.prev = None
+        self.last_change_frame = 1
+        self.buffer = []
 
-    prev = None
-    last_change_frame = 1
-    buffer = []
-    MAX_BUF_LEN = 256
-
-    for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
-        ret, frame = cap.read()
+    def send_to_buffer(self, frame_idx):
+        ret, frame = self.cap.read()
         if not ret:
-            break
-        height = 360
-        h, w = frame.shape[:2]
-        scale = height / h
-        new_w = int(w * scale)
-        resized_frame = cv2.resize(frame, (new_w, height))
-        rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-        pil_frame = Image.fromarray(rgb_frame)
+            return False
+        # Resize and convert
+        resized = cv2.resize(frame, (self.new_w, int(self.h * self.scale)))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
 
-        if prev is not None:
-            shot_change = is_shot_change(prev, frame)
+        # Shot change
+        if self.prev is None:
+            shot_change = False
         else:
-            shot_change= False
+            shot_change = is_shot_change(self.prev, frame)
+        self.prev = frame
 
-        prev = frame
+        self.buffer.append((shot_change, pil, rgb, frame_idx, frame))
+        return True
 
-        buffer.append((shot_change, pil_frame, rgb_frame))
+    def process_buffer(self):
+        boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
+        for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
+            shot_flag, _, _, frame_idx, orig = self.buffer[idx]
+            # Handle shot change
+            if shot_flag:
+                start = self.last_change_frame
+                end   = frame_idx - 1            # close previous shot one frame before this one
+                if end >= start:
+                    self.shot_segments[(start, end)] = self.position_db.copy()
+                self.position_db.clear()
+                self.last_change_frame = frame_idx
 
-        if len(buffer) == MAX_BUF_LEN:
-            boxes_list, probs_list = mtcnn.detect([x[1] for x in buffer])
-
-            batch = list(zip(boxes_list, probs_list))
-
-            for batch_idx, (boxes, probs) in enumerate(batch):
-                buffer_shot_change = buffer[batch_idx][0]
-                if buffer_shot_change:
-                    shot_segments[(last_change_frame, i - (MAX_BUF_LEN - batch_idx) + 1)] = position_db.copy()
-                    position_db = {}
-                    last_change_frame = i - (MAX_BUF_LEN - batch_idx) + 1 + 1
-
-                if boxes is None or len(boxes) == 0:
-                    continue
-
-                face_boxes = []
-                for j, box in enumerate(boxes):
-                    if probs[j] > face_prob_threshold:
-                        face_boxes.append(box)
-
-                boxes = face_boxes
-
-                face_crops = []
-                faces = []
-                faces_poses = []
-
-                if face_boxes is not None:
-                    for box in face_boxes:
-                        x1, y1, x2, y2 = box
-                        # x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
-
-                        # Padding for better crop
-                        pad = 10
-
-                        x1 = max(0, min(w - 1, x1 - pad))
-                        y1 = max(0, min(h - 1, y1 - pad))
-                        x2 = max(0, min(w, x2 + pad))
-                        y2 = max(0, min(h, y2 + pad))
-
-                        frame_for_box = buffer[batch_idx][2][:, :, ::-1]
-                        face_crop = frame_for_box[int(y1):int(y2), int(x1):int(x2)]
-
-                        if face_crop.size == 0 or face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
-                            continue  # skip this face box
-
-                        dim = (224, 224)
-                        face_crop = cv2.resize(face_crop, dim, interpolation=cv2.INTER_AREA)
-                        faces.append(face_crop)
-                        face_crop_tensor = torch.from_numpy(face_crop).permute(2, 0, 1).float()  # Convert to (C, H, W)
-                        face_crops.append(face_crop_tensor)
-                        x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
-                        faces_poses.append((x1, x2, y1, y2))
-
-                face_crops = np.array(face_crops)
-                if face_crops.size > 0:
-                    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                    face_crop_tensor = torch.from_numpy(face_crops).to(device)
-
-                    # Normalize the face images to [-1, 1]
-                    face_crop_tensor = (face_crop_tensor / 255.0 - 0.5) * 2.0
-
-                    try:
-                        with torch.no_grad():
-                            embeddings = model(face_crop_tensor)
-                        embeddings = embeddings.cpu().numpy()  # Convert embeddings to NumPy for similarity comparison
-                    except :
-                        print("Embedding failed")
-                        continue
-
-                    for j, embedding in enumerate(embeddings):
-                        matched_id = None
-                        for face_id, (prev_embedding, _) in embed_db.items():
-                            # Ensure both embeddings are numpy arrays
-                            sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
-                            if sim > embed_threshold:
-                                matched_id = face_id
-                                break
-
-                        if matched_id is None:
-                            matched_id = generate_id()  # Make sure `generate_id()` is implemented
-
-                        x_avg = (faces_poses[j][1] + faces_poses[j][0]) / 2
-                        y_avg = (faces_poses[j][3] + faces_poses[j][2]) / 2
-
-                        if matched_id not in embed_db:
-                            embed_db[matched_id] = (embedding, cv2.resize(faces[j], (112, 112), interpolation=cv2.INTER_AREA))
-
-                        if matched_id not in position_db:
-                            position_db[matched_id] = (1, x_avg, y_avg)
-                        else:
-                            curr_count = position_db[matched_id][0]
-                            x_avg_count = position_db[matched_id][1]
-                            y_avg_count = position_db[matched_id][2]
-                            position_db[matched_id] = (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg)
-            buffer.clear()
-
-    if buffer:
-        boxes_list, probs_list = mtcnn.detect([x[1] for x in buffer])
-
-        batch = list(zip(boxes_list, probs_list))
-
-        for batch_idx, (boxes, probs) in enumerate(batch):
-            buffer_shot_change = buffer[batch_idx][0]
-            if buffer_shot_change:
-                shot_segments[(last_change_frame, total_frames - (len(batch) + 1 - batch_idx))] = position_db.copy()
-                position_db = {}
-                last_change_frame = total_frames - (len(batch) + 1 - batch_idx) + 1
-
-            if boxes is None or len(boxes) == 0:
+            if boxes is None:
                 continue
+            # Filter by probability
+            valid = [b for i, b in enumerate(boxes) if probs[i] > self.face_prob_threshold]
+            crops, imgs, poses = self._crop_faces(idx, valid)
+            if not crops:
+                continue
+            norm = self._normalize(crops)
+            with torch.no_grad():
+                embs = self.model(norm).cpu().numpy()
 
-            face_boxes = []
-            for j, box in enumerate(boxes):
-                if probs[j] > face_prob_threshold:
-                    face_boxes.append(box)
+            for j, emb in enumerate(embs):
+                fid = self._find_match(emb) or generate_id()
+                x1, x2, y1, y2 = poses[j]
+                x_avg = (x1 + x2) / 2
+                y_avg = (y1 + y2) / 2
 
-            boxes = face_boxes
+                if fid not in self.embed_db:
+                    self.embed_db[fid] = (emb, cv2.resize(imgs[j], (112, 112)))
 
-            face_crops = []
-            faces = []
-            faces_poses = []
+                cnt, xs, ys = self.position_db.get(fid, (0, 0, 0))
+                self.position_db[fid] = (cnt + 1, xs + x_avg, ys + y_avg)
 
-            if face_boxes is not None:
-                for box in face_boxes:
-                    x1, y1, x2, y2 = box
-                    # x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
+        self.buffer.clear()
 
-                    # Padding for better crop
-                    pad = 10
+    def _crop_faces(self, idx, boxes):
+        crops, imgs, poses = [], [], []
+        shot_flag, pil, rgb, frame_idx, orig = self.buffer[idx]
+        for b in boxes:
+            x1, y1, x2, y2 = map(int, b)
+            pad = 10
+            x1, y1 = max(0, x1-pad), max(0, y1-pad)
+            x2, y2 = min(self.w, x2+pad), min(self.h, y2+pad)
+            patch = rgb[y1:y2, x1:x2][:, :, ::-1]
+            if patch.size == 0:
+                continue
+            resized = cv2.resize(patch, (224, 224))
+            tensor = torch.from_numpy(resized).permute(2,0,1).float()
+            crops.append(tensor)
+            imgs.append(patch)
+            # scale poses
+            poses.append((x1/self.scale, x2/self.scale, y1/self.scale, y2/self.scale))
+        return crops, imgs, poses
 
-                    x1 = max(0, min(w - 1, x1 - pad))
-                    y1 = max(0, min(h - 1, y1 - pad))
-                    x2 = max(0, min(w, x2 + pad))
-                    y2 = max(0, min(h, y2 + pad))
+    def _normalize(self, crops):
+        t = torch.stack(crops).to(self.device)
+        return (t/255 - 0.5)*2
 
-                    frame_for_box = buffer[batch_idx][2][:, :, ::-1]
-                    face_crop = frame_for_box[int(y1):int(y2), int(x1):int(x2)]
+    def _find_match(self, emb):
+        for fid, (ref, _) in self.embed_db.items():
+            sim = cosine_similarity(emb.reshape(1,-1), ref.reshape(1,-1))[0][0]
+            if sim > self.embed_threshold:
+                return fid
+        return None
 
-                    if face_crop.size == 0 or face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
-                        continue  # skip this face box
+    def run(self):
+        for idx in tqdm(range(self.total_frames), desc="Processing frames"):
+            alive = self.send_to_buffer(idx+1)
+            if not alive:
+                break
+            if len(self.buffer) >= MAX_BUF_LEN or idx == self.total_frames - 1:
+                self.process_buffer()
 
-                    dim = (224, 224)
-                    face_crop = cv2.resize(face_crop, dim, interpolation=cv2.INTER_AREA)
-                    faces.append(face_crop)
-                    face_crop_tensor = torch.from_numpy(face_crop).permute(2, 0, 1).float()  # Convert to (C, H, W)
-                    face_crops.append(face_crop_tensor)
-                    x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
-                    faces_poses.append((x1, x2, y1, y2))
+        # final segment
+        self.shot_segments[(self.last_change_frame, self.total_frames)] = self.position_db.copy()
+        self.cap.release()
+        return self.embed_db, self.shot_segments
 
-            face_crops = np.array(face_crops)
-            if face_crops.size > 0:
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                face_crop_tensor = torch.from_numpy(face_crops).to(device)
 
-                # Normalize the face images to [-1, 1]
-                face_crop_tensor = (face_crop_tensor / 255.0 - 0.5) * 2.0
 
-                try:
-                    with torch.no_grad():
-                        embeddings = model(face_crop_tensor)
-                    embeddings = embeddings.cpu().numpy()  # Convert embeddings to NumPy for similarity comparison
-                except :
-                    print("Embedding failed")
-                    continue
+class FaceIDModelMultithread:
+    def __init__(self, video_path, height=360, embed_threshold=0.7, face_prob_threshold=0.999):
+        self.video_path = video_path
+        self.embed_threshold = embed_threshold
+        self.face_prob_threshold = face_prob_threshold
 
-                for j, embedding in enumerate(embeddings):
-                    matched_id = None
-                    for face_id, (prev_embedding, _) in embed_db.items():
-                        # Ensure both embeddings are numpy arrays
-                        sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
-                        if sim > embed_threshold:
-                            matched_id = face_id
-                            break
+        # Device
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-                    if matched_id is None:
-                        matched_id = generate_id()  # Make sure `generate_id()` is implemented
+        # Models
+        self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        self.mtcnn = MTCNN(keep_all=True, device=self.device)
 
-                    x_avg = (faces_poses[j][1] + faces_poses[j][0]) / 2
-                    y_avg = (faces_poses[j][3] + faces_poses[j][2]) / 2
+        # Video capture
+        self.cap = cv2.VideoCapture(video_path)
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.scale = height / self.h
+        self.new_w = int(self.w * self.scale)
 
-                    if matched_id not in embed_db:
-                        embed_db[matched_id] = (embedding, cv2.resize(faces[j], (112, 112), interpolation=cv2.INTER_AREA))
+        # State
+        self.embed_db = {}
+        self.position_db = {}
+        self.shot_segments = {}
+        self.prev = None
+        self.last_change_frame = 1
+        self._cap_lock = threading.Lock()
+        self.buffer = []
 
-                    if matched_id not in position_db:
-                        position_db[matched_id] = (1, x_avg, y_avg)
-                    else:
-                        curr_count = position_db[matched_id][0]
-                        x_avg_count = position_db[matched_id][1]
-                        y_avg_count = position_db[matched_id][2]
-                        position_db[matched_id] = (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg)
+    def _package_frame(self, orig_frame, frame_idx):
+        # 1) Resize & RGB
+        resized = cv2.resize(orig_frame, (self.new_w, int(self.h * self.scale)))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
+
+        # 2) Shot change
+        if self.prev is None:
+            shot_change = False
+        else:
+            shot_change = is_shot_change(self.prev, orig_frame)
+        self.prev = orig_frame
+
+        # 3) Return tuple for processing
+        return (shot_change, pil, rgb, frame_idx, orig_frame)
+
+    def send_to_buffer(self, frame_idx):
+        ret, frame = self.cap.read()
+        if not ret:
+            return False
+        # Resize and convert
+        resized = cv2.resize(frame, (self.new_w, int(self.h * self.scale)))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
+
+        # Shot change
+        if self.prev is None:
+            shot_change = False
+        else:
+            shot_change = is_shot_change(self.prev, frame)
+        self.prev = frame
+
+        self.buffer.append((shot_change, pil, rgb, frame_idx, frame))
+        return True
+
+    def process_buffer(self):
+        boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
+        for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
+            shot_flag, _, _, frame_idx, orig = self.buffer[idx]
+            # Handle shot change
+            if shot_flag:
+                start = self.last_change_frame
+                end   = frame_idx - 1
+                if end >= start:
+                    self.shot_segments[(start, end)] = self.position_db.copy()
+                self.position_db.clear()
+                self.last_change_frame = frame_idx
+
+            if boxes is None:
+                continue
+            # Filter by probability
+            valid = [b for i, b in enumerate(boxes) if probs[i] > self.face_prob_threshold]
+            crops, imgs, poses = self._crop_faces(idx, valid)
+            if not crops:
+                continue
+            norm = self._normalize(crops)
+            with torch.no_grad():
+                embs = self.model(norm).cpu().numpy()
+
+            for j, emb in enumerate(embs):
+                fid = self._find_match(emb) or generate_id()
+                x1, x2, y1, y2 = poses[j]
+                x_avg = (x1 + x2) / 2
+                y_avg = (y1 + y2) / 2
+
+                if fid not in self.embed_db:
+                    self.embed_db[fid] = (emb, cv2.resize(imgs[j], (112, 112)))
+
+                cnt, xs, ys = self.position_db.get(fid, (0, 0, 0))
+                self.position_db[fid] = (cnt + 1, xs + x_avg, ys + y_avg)
+
+        self.buffer.clear()
+
+    def _crop_faces(self, idx, boxes):
+        crops, imgs, poses = [], [], []
+        shot_flag, pil, rgb, frame_idx, orig = self.buffer[idx]
+        for b in boxes:
+            x1, y1, x2, y2 = map(int, b)
+            pad = 10
+            x1, y1 = max(0, x1-pad), max(0, y1-pad)
+            x2, y2 = min(self.w, x2+pad), min(self.h, y2+pad)
+            patch = rgb[y1:y2, x1:x2][:, :, ::-1]
+            if patch.size == 0:
+                continue
+            resized = cv2.resize(patch, (224, 224))
+            tensor = torch.from_numpy(resized).permute(2,0,1).float()
+            crops.append(tensor)
+            imgs.append(patch)
+            poses.append((x1/self.scale, x2/self.scale, y1/self.scale, y2/self.scale))
+        return crops, imgs, poses
+
+    def _normalize(self, crops):
+        t = torch.stack(crops).to(self.device)
+        return (t/255 - 0.5)*2
+
+    def _find_match(self, emb):
+        for fid, (ref, _) in self.embed_db.items():
+            sim = cosine_similarity(emb.reshape(1,-1), ref.reshape(1,-1))[0][0]
+            if sim > self.embed_threshold:
+                return fid
+        return None
+
+    def _fill_buffer(self, buffer, start_idx):
         buffer.clear()
+        idx = start_idx
+        for _ in range(MAX_BUF_LEN):
+            with self._cap_lock:
+                ret, frame = self.cap.read()
+            if not ret:
+                break
+            buffer.append(self._package_frame(frame, idx))
+            idx += 1
+        return idx
 
-    if position_db is not {}:
-        shot_segments[(last_change_frame, total_frames)] = position_db.copy()
+    def _fill_buffer_threaded(self, start_idx):
+        def worker():
+            self._next_end_idx = self._fill_buffer(self._next_buffer, start_idx)
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        return thread
 
-    cap.release()
-    cv2.destroyAllWindows()
+    def _swap_buffers(self):
+        self.buffer, self._next_buffer = self._next_buffer, self.buffer
+        self.current_start_idx = self.current_end_idx
 
-    return embed_db, shot_segments
+    def run(self):
+        self.buffer = []
+        self._next_buffer = []
+        self.current_start_idx = 1
+        self.current_end_idx = 1
 
+        fill_thread = self._fill_buffer_threaded(self.current_start_idx)
 
+        while True:
+            fill_thread.join()
+            if not self.buffer:
+                break
 
-def buffer_thread(buffer, mtcnn, embed_db, position_db, shot_segments,
-                  lock, model, embed_threshold, face_prob_threshold,
-                  MAX_BUF_LEN, last_change_frame, start_frame_idx):
-    boxes_list, probs_list = mtcnn.detect([x[1] for x in buffer])
+            self.process_buffer()
+            self.current_end_idx = getattr(self, "_next_end_idx", self.current_start_idx)
 
-    batch = list(zip(boxes_list, probs_list))
+            if self.current_end_idx > self.total_frames:
+                break
 
-    for batch_idx, (boxes, probs) in enumerate(batch):
-        buffer_shot_change = buffer[batch_idx][0]
-        if buffer_shot_change:
-            shot_segments[(last_change_frame, i - (MAX_BUF_LEN - batch_idx) + 1)] = position_db.copy()
-            position_db = {}
-            last_change_frame = i - (MAX_BUF_LEN - batch_idx) + 1 + 1
+            fill_thread = self._fill_buffer_threaded(self.current_end_idx)
+            self._swap_buffers()
 
-        if boxes is None or len(boxes) == 0:
-            continue
-
-        face_boxes = []
-        for j, box in enumerate(boxes):
-            if probs[j] > face_prob_threshold:
-                face_boxes.append(box)
-
-        boxes = face_boxes
-
-        face_crops = []
-        faces = []
-        faces_poses = []
-
-        if face_boxes is not None:
-            for box in face_boxes:
-                x1, y1, x2, y2 = box
-                # x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
-
-                # Padding for better crop
-                pad = 10
-
-                x1 = max(0, min(w - 1, x1 - pad))
-                y1 = max(0, min(h - 1, y1 - pad))
-                x2 = max(0, min(w, x2 + pad))
-                y2 = max(0, min(h, y2 + pad))
-
-                frame_for_box = buffer[batch_idx][2][:, :, ::-1]
-                face_crop = frame_for_box[int(y1):int(y2), int(x1):int(x2)]
-
-                if face_crop.size == 0 or face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
-                    continue  # skip this face box
-
-                dim = (224, 224)
-                face_crop = cv2.resize(face_crop, dim, interpolation=cv2.INTER_AREA)
-                faces.append(face_crop)
-                face_crop_tensor = torch.from_numpy(face_crop).permute(2, 0, 1).float()  # Convert to (C, H, W)
-                face_crops.append(face_crop_tensor)
-                x1, y1, x2, y2 = 1/scale * x1, 1/scale * y1, 1/scale * x2, 1/scale * y2 
-                faces_poses.append((x1, x2, y1, y2))
-
-        face_crops = np.array(face_crops)
-        if face_crops.size > 0:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            face_crop_tensor = torch.from_numpy(face_crops).to(device)
-
-            # Normalize the face images to [-1, 1]
-            face_crop_tensor = (face_crop_tensor / 255.0 - 0.5) * 2.0
-
-            try:
-                with torch.no_grad():
-                    embeddings = model(face_crop_tensor)
-                embeddings = embeddings.cpu().numpy()  # Convert embeddings to NumPy for similarity comparison
-            except :
-                print("Embedding failed")
-                continue
-
-            for j, embedding in enumerate(embeddings):
-                matched_id = None
-                for face_id, (prev_embedding, _) in embed_db.items():
-                    # Ensure both embeddings are numpy arrays
-                    sim = cosine_similarity(embedding.reshape(1, -1), prev_embedding.reshape(1, -1))[0][0]
-                    if sim > embed_threshold:
-                        matched_id = face_id
-                        break
-
-                if matched_id is None:
-                    matched_id = generate_id()  # Make sure `generate_id()` is implemented
-
-                x_avg = (faces_poses[j][1] + faces_poses[j][0]) / 2
-                y_avg = (faces_poses[j][3] + faces_poses[j][2]) / 2
-
-                if matched_id not in embed_db:
-                    embed_db[matched_id] = (embedding, cv2.resize(faces[j], (112, 112), interpolation=cv2.INTER_AREA))
-
-                if matched_id not in position_db:
-                    position_db[matched_id] = (1, x_avg, y_avg)
-                else:
-                    curr_count = position_db[matched_id][0]
-                    x_avg_count = position_db[matched_id][1]
-                    y_avg_count = position_db[matched_id][2]
-                    position_db[matched_id] = (curr_count + 1, x_avg_count + x_avg, y_avg_count + y_avg)
-    del buffer
-
-
-def create_face_ids_mtcnn_parallel(video_path):
-    lock = threading.Lock()
-
-    # Setup
-    embed_threshold = 0.7  # Cosine similarity threshold for identity matching
-    face_prob_threshold = 0.999
-    # Face embedding model
-    model_name = 'Facenet'
-    model = InceptionResnetV1(pretrained='vggface2').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Face detection model
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    mtcnn = MTCNN(keep_all=True, device=device)
-
-    # Video input
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    # Track embeddings + IDs
-    embed_db = {}
-    position_db = {}
-    shot_segments = {}
-
-    prev = None
-    last_change_frame = 1
-    buffer = []
-    MAX_BUF_LEN = 256
-
-    active_threads = []
-    num_threads = 1
-
-    for i in tqdm(range(total_frames), desc="Processing frames", unit="frame"):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        height = 360
-        h, w = frame.shape[:2]
-        scale = height / h
-        new_w = int(w * scale)
-        resized_frame = cv2.resize(frame, (new_w, height))
-        rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-        pil_frame = Image.fromarray(rgb_frame)
-
-        if prev is not None:
-            shot_change = is_shot_change(prev, frame)
-        else:
-            shot_change= False
-
-        prev = frame
-
-        buffer.append((shot_change, pil_frame, rgb_frame))
-
-        if len(buffer) == MAX_BUF_LEN:
-            while len(active_threads) >= 1:
-                for t in active_threads:
-                    if not t.is_alive():
-                        t.join()
-                        active_threads.remove(t)
-
-            t = threading.Thread(
-                    target=buffer_thread,
-                    args=(buffer.copy(), mtcnn, embed_db, position_db, shot_segments,
-                          lock, model, embed_threshold, face_prob_threshold,
-                          MAX_BUF_LEN, last_change_frame, i - MAX_BUF_LEN + 1)
-                    )
-
-            t.start()
-            active_threads.append(t)
-            buffer.clear()
-
-    if buffer:
-        t = threading.Thread(
-            target=buffer_thread,
-            args=(buffer.copy(), mtcnn, embed_db, position_db, shot_segments,
-                  lock, model, embed_threshold, face_prob_threshold,
-                  MAX_BUF_LEN, last_change_frame, total_frames - len(buffer))
-        )
-        t.start()
-        t.join()
-
-    if position_db is not {}:
-        shot_segments[(last_change_frame, total_frames)] = position_db.copy()
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-    return embed_db, shot_segments
-
+        # final shot segment
+        self.shot_segments[(self.last_change_frame, self.total_frames)] = self.position_db.copy()
+        self.cap.release()
+        return self.embed_db, self.shot_segments
 

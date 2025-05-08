@@ -13,7 +13,7 @@ import ffmpeg
 
 from gui import GUI
 from diarize import diarize
-from faces import create_face_ids_mtcnn, create_face_ids_mtcnn_parallel
+from faces import FaceIDModel, FaceIDModelMultithread
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
@@ -72,6 +72,7 @@ class TikTokEditor:
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
 
+
         self.video_path = video_path
         self.video_title = Path(video_path).stem
         probe = ffmpeg.probe(video_path)
@@ -117,7 +118,7 @@ class TikTokEditor:
             with open(self.shots_path, "r") as f:
                 self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
-            self.face_db, self.shot_segments = create_face_ids_mtcnn(self.video_path)
+            self.face_db, self.shot_segments = FaceIDModel(self.video_path).run()
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
             with open(self.shots_path, "w") as f:

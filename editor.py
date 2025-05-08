@@ -17,6 +17,7 @@ from faces import FaceIDModel, FaceIDModelMultithread
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
+# A handful of utility functions
 def convert_to_serializable(obj):
     if isinstance(obj, (np.integer, np.int64)):
         return int(obj)
@@ -69,33 +70,39 @@ def parse_keys_to_tuples(d):
 
 class TikTokEditor:
     def __init__(self, video_path, n_speakers, embed_threshold, word_subtitles, delete_cache):
+        # Ensure output and cache directories exist before using them
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
 
-
         self.video_path = video_path
         self.video_title = Path(video_path).stem
+        self.n_speakers = n_speakers
+        self.embed_threshold = embed_threshold
+        self.word_subtitles = word_subtitles
+
+        # return frame rate fraction from ffmpeg probe
         probe = ffmpeg.probe(video_path)
         video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
         r_frame_rate = video_stream['r_frame_rate']  # e.g., "30000/1001"
         num, den = map(int, r_frame_rate.split('/'))
 
+        # Delete files in cache corresponding to video_title if flag set
         if delete_cache:
             delete_files_by_regex("cache", self.video_title)
 
-        self.n_speakers = n_speakers
-        self.embed_threshold = embed_threshold
-        self.word_subtitles = word_subtitles
         self.output_path = os.path.join("output", "output.mp4")
         self.output_final_path = os.path.join("output", "output_final.mp4")
         self.output_final_subtitled_path = os.path.join("output", f"{self.video_title}_final_subtitled.mp4")
+        # Create paths to cache files
         self.segments_path = os.path.join("cache", f"{self.video_title}_segments.json")
         self.blend_path = os.path.join("cache", f"{self.video_title}_blend.json")
         self.subtitle_path = os.path.join("cache", f"{self.video_title}.srt")
         self.face_db_path = os.path.join("cache", f"{self.video_title}_face_db.json")
         self.shots_path = os.path.join("cache", f"{self.video_title}_shots.json")
-        self.ids_dict = {}
+        self.ids_dict_path = os.path.join("cache", f"{self.video_title}_ids.json")
+        self.ids_dict = {} # {speaker_id: face_id}
 
+        # Create file that with video and cache info for easy importing in blender
         with open(".last_video.txt", "w") as f:
             f.write(str(Path(self.video_path).resolve()) + "\n")
             f.write(str(Path(self.blend_path).resolve()) + "\n")
@@ -104,7 +111,10 @@ class TikTokEditor:
             f.write(str(den) + "\n")
 
 
+    # Perform speaker diarization, face detection and embedding, 
+    # and create gui for matching similar faces and matching faces to speakers
     def analyze(self):
+        # Perform speaker diarization on video or load diarization cache
         if os.path.exists(self.segments_path):
             with open(self.segments_path, "r") as f:
                 self.speaker_segments = json.load(f)
@@ -113,6 +123,8 @@ class TikTokEditor:
             with open(self.segments_path, "w") as f:
                 json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
 
+        # Return face embeddings and segments separated by shot changes on video 
+        # or load embeddings and segments from cache
         if os.path.exists(self.face_db_path) and os.path.exists(self.shots_path):
             with open(self.face_db_path, "r") as f:
                 self.face_db = json.load(f)
@@ -125,25 +137,22 @@ class TikTokEditor:
             with open(self.shots_path, "w") as f:
                 json.dump(stringify_keys(self.shot_segments), f, indent=4, default=make_json_serializable)
 
-        self.gui = GUI(self.video_path)
-        self.gui.match_faces_to_voices(self.face_db, self.speaker_segments)
-        self.combine_speakers_faces()
+        # Open GUI for matching faces to speakers or load from cache
+        if os.path.exists(self.ids_dict_path):
+            with open(self.ids_dict_path, "r") as f:
+                self.ids_dict = json.load(f)
+        else:
+            self.gui = GUI(self.video_path)
+            self.gui.match_faces_to_voices(self.face_db, self.speaker_segments)
+            self.combine_speakers_faces()
+            with open(self.ids_dict_path, "w") as f:
+                json.dump(self.ids_dict, f, indent=4)
+            with open(self.shots_path, "w") as f:
+                json.dump(stringify_keys(self.shot_segments), f, indent=4, default=make_json_serializable)
 
 
-
-    def edit(self):
-        self.crop_video_on_speaker_bbox_static()
-        self.extract_audio_and_apply_to_video()
-        subprocess.run(["mpv", self.output_final_path, "--volume=60"])
-
-
-    def edit_w_subtitles(self, blender_prep):
-        self.crop_video_on_speaker_bbox_static()
-        self.extract_audio_and_apply_to_video()
-        self.add_subs_to_video()
-        subprocess.run(["mpv", self.output_final_subtitled_path, "--volume=60"])
-
-
+    # Iterates through shot_segments and combines faces and face data 
+    # if they were linked in the match_faces_to_voices function from GUI 
     def combine_speakers_faces(self):
         combine_ids_dict = {}
 
@@ -176,6 +185,20 @@ class TikTokEditor:
             self.shot_segments[segment] = new_db
 
 
+    def create_subtitles(self):
+        if self.word_subtitles:
+            generate_word_srt(self.video_path, self.subtitle_path)
+        else:
+            generate_sentence_srt(self.video_path, self.subtitle_path)
+
+
+    def add_subs_to_video(self):
+        add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
+        os.remove(self.output_final_path)
+
+
+    # Create blend cache file for importing to blender
+    # contains position of where to set frame for every frame in the video
     def prepare_for_blender(self):
         cap = cv2.VideoCapture(self.video_path)
 
@@ -255,16 +278,22 @@ class TikTokEditor:
         self.create_subtitles()
 
 
-    def create_subtitles(self):
-        if self.word_subtitles:
-            generate_word_srt(self.video_path, self.subtitle_path)
-        else:
-            generate_sentence_srt(self.video_path, self.subtitle_path)
 
 
-    def add_subs_to_video(self):
-        add_subtitles_from_srt(self.output_final_path, self.subtitle_path, self.output_final_subtitled_path)
-        os.remove(self.output_final_path)
+
+
+
+    def edit(self):
+        self.crop_video_on_speaker_bbox_static()
+        self.extract_audio_and_apply_to_video()
+        subprocess.run(["mpv", self.output_final_path, "--volume=60"])
+
+
+    def edit_w_subtitles(self, blender_prep):
+        self.crop_video_on_speaker_bbox_static()
+        self.extract_audio_and_apply_to_video()
+        self.add_subs_to_video()
+        subprocess.run(["mpv", self.output_final_subtitled_path, "--volume=60"])
 
 
     def crop_video_on_speaker_bbox_static(self):

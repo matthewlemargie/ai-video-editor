@@ -50,6 +50,8 @@ class FaceIDModel:
         self.last_change_frame = 1
         self.buffer = []
 
+
+    # Read and preprocess frame for model then send to buffer
     def send_to_buffer(self, frame_idx):
         ret, frame = self.cap.read()
         if not ret:
@@ -69,14 +71,16 @@ class FaceIDModel:
         self.buffer.append((shot_change, pil, rgb, frame_idx, frame))
         return True
 
+    # Get face detection bounding boxes from running mtcnn on self.buffer
+    # Iterate through frames and faces and save embeddings and crops and positions
     def process_buffer(self):
         boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
         for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
             shot_flag, _, _, frame_idx, orig = self.buffer[idx]
-            # Handle shot change
+            # Handle shot changes
             if shot_flag:
                 start = self.last_change_frame
-                end   = frame_idx - 1            # close previous shot one frame before this one
+                end = frame_idx - 1
                 if end >= start:
                     self.shot_segments[(start, end)] = self.position_db.copy()
                 self.position_db.clear()
@@ -93,6 +97,7 @@ class FaceIDModel:
             with torch.no_grad():
                 embs = self.model(norm).cpu().numpy()
 
+            # Add embeddings and ids to self.embed_db and self.position_db
             for j, emb in enumerate(embs):
                 fid = self._find_match(emb) or generate_id()
                 x1, x2, y1, y2 = poses[j]
@@ -149,55 +154,11 @@ class FaceIDModel:
         self.shot_segments[(self.last_change_frame, self.total_frames)] = self.position_db.copy()
         self.cap.release()
 
-        embeddings = np.array([x[0] for x in self.embed_db.values()])
-        ids = np.array(list(self.embed_db.keys()))
-
-        labels = []
-
-        # labels = AgglomerativeClustering().fit_predict(embeddings)
-        # labels = kmeans_grid_search(embeddings)
-        # labels = MeanShift().fit_predict(embeddings)
-
-        combine_dict = {}
-
-        # Build a map of main_id -> list of ids to merge into it
-        for label in set(labels):
-            idxs = np.where(labels == label)[0]
-            if len(idxs) < 2:
-                continue  # Skip singleton clusters
-
-            first_idx = int(idxs[0])
-            rest_idxs = idxs[1:]
-
-            main_id = ids[first_idx]
-            replace_ids = [ids[i] for i in rest_idxs]
-
-            combine_dict[main_id] = replace_ids
-
-            # Delete merged IDs from embed_db
-            for rid in replace_ids:
-                if rid in self.embed_db:
-                    del self.embed_db[rid]
-
-        # Merge position data in each shot segment
-        for (start, end), face_db in self.shot_segments.items():
-            for main_id, replace_ids in combine_dict.items():
-                if main_id not in face_db:
-                    continue
-                m_cnt, m_xs, m_ys = face_db[main_id]
-                for rid in replace_ids:
-                    if rid in face_db:
-                        r_cnt, r_xs, r_ys = face_db[rid]
-                        m_cnt += r_cnt
-                        m_xs += r_xs
-                        m_ys += r_ys
-                        del face_db[rid]
-                face_db[main_id] = (m_cnt, m_xs, m_ys)
-
         return self.embed_db, self.shot_segments
 
 
 
+# Multithreaded version (not working)
 class FaceIDModelMultithread:
     def __init__(self, video_path, height=360, embed_threshold=0.7, face_prob_threshold=0.999):
         self.video_path = video_path

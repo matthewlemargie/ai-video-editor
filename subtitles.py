@@ -3,6 +3,7 @@ import whisper
 import torch
 import os
 import shutil
+from time import time
 
 # Format SRT timestamp: 00:00:00,000
 def format_srt_time(seconds):
@@ -20,6 +21,7 @@ def extract_audio(video_path, audio_path):
 
 # Generate word-by-word SRT
 def generate_word_srt(video_path, srt_output):
+    s = time()
     if os.path.exists(srt_output):
         return
     audio_path = "temp_audio.wav"
@@ -48,6 +50,8 @@ def generate_word_srt(video_path, srt_output):
 
     os.remove(audio_path)
     print(f"[✓] Done! SRT file saved as: {srt_output}")
+    print(f"Speech-to-text transcription with openai-whisper was completed in {time() - s:.2f}s")
+    print()
 
 
 def split_into_lines(text, max_chars):
@@ -67,6 +71,7 @@ def split_into_lines(text, max_chars):
 
 
 def generate_sentence_srt(video_path, srt_output):
+    start = time()
     if os.path.exists(srt_output):
         return
     audio_path = "temp_audio.wav"
@@ -129,6 +134,8 @@ def generate_sentence_srt(video_path, srt_output):
 
     os.remove(audio_path)
     print(f"[✓] Done! SRT file saved as: {srt_output}")
+    print(f"Speech-to-text transcription with openai-whisper was completed in {time() - start:.2f}s")
+    print()
 
 
 def add_subtitles_from_srt(video_path, srt_path, output_video_path):

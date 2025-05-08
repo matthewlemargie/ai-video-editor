@@ -2,6 +2,7 @@ import ffmpeg
 import numpy as np
 import io
 import soundfile as sf
+from time import time
 from resemblyzer import VoiceEncoder, preprocess_wav
 from sklearn.cluster import AgglomerativeClustering
 
@@ -25,6 +26,7 @@ def extract_audio_np(video_path, target_sr=16000):
 # Perform speaker diarization on audio from video_path
 # Return segments of speaker ids and start and end times
 def diarize(video_path, n_speakers=2):
+    start = time()
     wav, sr = extract_audio_np(video_path)
     encoder = VoiceEncoder()
 
@@ -71,6 +73,8 @@ def diarize(video_path, n_speakers=2):
             start_time = all_wav_splits[i][0]
 
     segments.append((current_speaker, start_time, all_wav_splits[-1][1]))
+
+    print(f"Speaker diarization with resemblyzer was completed in {time() - start:.2f}s")
 
     return segments
 

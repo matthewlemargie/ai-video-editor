@@ -11,9 +11,9 @@ import time
 import re
 import ffmpeg
 
-from gui import GUI
 from diarize import diarize
-from faces import FaceIDModel, FaceIDModelMultithread
+from faces import FaceIDModel
+from gui import GUI
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 
@@ -199,7 +199,7 @@ class TikTokEditor:
 
     # Create blend cache file for importing to blender
     # contains position of where to set frame for every frame in the video
-    def prepare_for_blender(self):
+    def prepare_for_blender(self, add_subtitles):
         cap = cv2.VideoCapture(self.video_path)
 
         # Get video properties
@@ -275,7 +275,8 @@ class TikTokEditor:
         with open(self.blend_path, "w") as f:
             json.dump(blend, f, indent=4)
 
-        self.create_subtitles()
+        if add_subtitles:
+            self.create_subtitles()
 
 
 

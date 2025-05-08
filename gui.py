@@ -143,6 +143,7 @@ class GUI:
 
 
     def on_submit(self):
+        pygame.mixer.stop()
         for face_id, entry in self.entry_boxes.items():
             value = entry.get().strip()
             if value.isdigit():

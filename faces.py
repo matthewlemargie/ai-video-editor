@@ -10,7 +10,8 @@ import torch
 import os
 import math
 from tqdm import tqdm
-import time
+from time import time
+
 import threading
 
 from framediff import is_shot_change
@@ -143,7 +144,8 @@ class FaceIDModel:
         return None
 
     def run(self):
-        for idx in tqdm(range(self.total_frames), desc="Processing frames"):
+        start = time()
+        for idx in tqdm(range(self.total_frames), desc="Embedding faces"):
             alive = self.send_to_buffer(idx+1)
             if not alive:
                 break
@@ -153,6 +155,8 @@ class FaceIDModel:
         # final segment
         self.shot_segments[(self.last_change_frame, self.total_frames)] = self.position_db.copy()
         self.cap.release()
+
+        print(f"Face embedding and segments created with facenet_pytorch in {time() - start:.2f}s")
 
         return self.embed_db, self.shot_segments
 

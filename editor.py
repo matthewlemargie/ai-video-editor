@@ -13,7 +13,7 @@ import ffmpeg
 
 from gui import GUI
 from diarize import diarize
-from faces import create_face_ids_mtcnn
+from faces import create_face_ids_mtcnn, create_face_ids_mtcnn_parallel
 from subtitles import generate_word_srt, generate_sentence_srt, add_subtitles_from_srt 
 
 

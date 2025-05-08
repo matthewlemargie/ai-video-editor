@@ -54,73 +54,75 @@ def add_subtitles_to_vse(srt_path, fps):
         text_strip.use_box = True
         text_strip.location = (0.5, 0.3)  # normalized location (x, y)
 
+def add_edited_clips(scene, video_path, blend):
+    prev_left, prev_right = blend[0][3], blend[0][4]
+    start = 1
 
-with open(os.path.join(str(Path.home()), ".last_video.txt"), "r") as f:
-    video_path = f.readline().strip()
-    blend_path = f.readline().strip()
-    subtitles_path = f.readline().strip()
-    num = int(f.readline().strip())
-    den = int(f.readline().strip())
-    width = int(f.readline().strip())
-    height = int(f.readline().strip())
+    # Add edited video clips to sequence editor
+    for frame_idx, bottom, top, left, right in blend:
+        
+        if left != prev_left and right != prev_right or frame_idx == len(blend):
+            end = frame_idx
+
+            movie_strip = scene.sequence_editor.sequences.new_movie(
+                name="MyVideo",
+                filepath=video_path, 
+                channel=2,
+                frame_start=1
+            )
+            movie_strip.frame_offset_start = start - 1
+            if frame_idx != len(blend):
+                movie_strip.frame_final_duration = end - start
+
+            offset = -((prev_left + prev_right) // 2 - 1920 / 2)
+            
+            movie_strip.transform.offset_x = offset
+            
+            prev_left = left
+            prev_right = right
+            start = frame_idx
+
+    # Make the length of the video the project length
+    bpy.context.scene.frame_end = end - 1
     
-filename = Path(video_path).stem
-start_frame = 0
-audio_channel = 1
-channel = 2
+def add_audio_to_vse(scene, video_path):
+    # Add audio to sequence editor
+    audio_strip = scene.sequence_editor.sequences.new_sound(
+        name="MyAudio",
+        filepath=video_path,  # Same file as the video
+        channel=1,
+        frame_start=1
+    )
+    audio_strip.volume  = 0.6
+    
 
 scene = bpy.context.scene
-
-scene.render.fps = num
-scene.render.fps_base = den
-
-bpy.context.scene.render.resolution_x = width
-bpy.context.scene.render.resolution_y = height
 
 # Create Sequence Editor if it doesn't exist
 if not scene.sequence_editor:
     scene.sequence_editor_create()
 
-audio_strip = scene.sequence_editor.sequences.new_sound(
-    name="MyAudio",
-    filepath=video_path,  # Same file as the video
-    channel=audio_channel,
-    frame_start=1
-)
+# Load video data from cache file
+with open(os.path.join(str(Path.home()), ".last_video.txt"), "r") as f:
+    video_path = f.readline().strip()
+    blend_path = f.readline().strip()
+    srt_path = f.readline().strip()
 
-audio_strip.volume  = 0.6
+    scene.render.fps = num = int(f.readline().strip())
+    scene.render.fps_base = den = int(f.readline().strip())
 
+    bpy.context.scene.render.resolution_x = int(f.readline().strip())
+    bpy.context.scene.render.resolution_y = int(f.readline().strip())
+
+add_audio_to_vse(scene, video_path)
+
+# Load video editing data
 with open(blend_path, "r") as f:
     blend = json.load(f)
     
-prev_left, prev_right = blend[0][3], blend[0][4]
-start = 1
+add_edited_clips(scene, video_path, blend)
 
-for frame_idx, bottom, top, left, right in blend:
-    
-    if left != prev_left and right != prev_right or frame_idx == len(blend):
-        end = frame_idx
-
-        movie_strip = scene.sequence_editor.sequences.new_movie(
-            name="MyVideo",
-            filepath=video_path, 
-            channel=channel,
-            frame_start=1
-        )
-        movie_strip.frame_offset_start = start - 1
-        if frame_idx != len(blend):
-            movie_strip.frame_final_duration = end - start
-
-        offset = -((prev_left + prev_right) // 2 - 1920 / 2)
-        
-        movie_strip.transform.offset_x = offset
-        
-        prev_left = left
-        prev_right = right
-        start = frame_idx
-
-bpy.context.scene.frame_end = end - 1
-
-add_subtitles_to_vse(subtitles_path, num / den)
+if os.path.exists(srt_path):
+    add_subtitles_to_vse(srt_path, num / den)
 
 print("Successfully imported video with editing data")

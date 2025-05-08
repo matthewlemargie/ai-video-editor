@@ -24,7 +24,7 @@ editor = TikTokEditor(args.video_path, args.n_speakers, args.threshold, args.wor
 editor.analyze()
 editor.prepare_for_blender()
 print("Successfully created cache file for importing to Blender")
-print("Open blender from source directory in terminal and run blender.py in Text Editor")
+print("Open Blender and run blender.py in Text Editor to create edited video")
 
 if args.edit:
     if args.add_subtitles:

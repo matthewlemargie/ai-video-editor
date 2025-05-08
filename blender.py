@@ -54,7 +54,8 @@ def add_subtitles_to_vse(srt_path, fps):
         text_strip.use_box = True
         text_strip.location = (0.5, 0.3)  # normalized location (x, y)
 
-with open(".last_video.txt", "r") as f:
+
+with open(os.path.join(str(Path.home()), ".last_video.txt"), "r") as f:
     video_path = f.readline().strip()
     blend_path = f.readline().strip()
     subtitles_path = f.readline().strip()

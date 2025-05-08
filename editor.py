@@ -103,7 +103,7 @@ class TikTokEditor:
         self.ids_dict = {} # {speaker_id: face_id}
 
         # Create file that with video and cache info for easy importing in blender
-        with open(".last_video.txt", "w") as f:
+        with open(os.path.join(str(Path.home()), ".last_video.txt"), "w") as f:
             f.write(str(Path(self.video_path).resolve()) + "\n")
             f.write(str(Path(self.blend_path).resolve()) + "\n")
             f.write(str(Path(self.subtitle_path).resolve()) + "\n")
@@ -212,7 +212,7 @@ class TikTokEditor:
         new_width = int(math.ceil(height * (9 / 16)))
         output_size = (new_width, height)
 
-        with open(".last_video.txt", "a") as f:
+        with open(os.path.join(str(Path.home()), ".last_video.txt"), "a") as f:
             f.write(str(new_width) + "\n")
             f.write(str(height) + "\n")
 

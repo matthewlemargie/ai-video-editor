@@ -7,6 +7,8 @@ appropriate for TikTok/Instagram Reels/etc.
 The program uses a mix of speaker diarization, face embeddings,
 shot change tracking, and speech-to-text to edit videos.
 
+[Example usage and output](https://youtu.be/wWcMCVsQR04)
+
 ## How to Use
 
 Create conda environment with:
@@ -21,12 +23,12 @@ Add tag `--add-subtitles` to output edited video with subtitles
 
 The output video can be found in the output directory
 
-### Example
+#<! -- ## Example -->
 
-[Example output with audio](https://www.youtube.com/watch?v=e0QwOcsAZ28)
+<! -- [Example output with audio](https://www.youtube.com/watch?v=e0QwOcsAZ28) -->
 
-![Input Example](examples/input.gif)
+<! -- ![Input Example](examples/input.gif) -->
 
-![Output Example](examples/output.gif)
+<! -- ![Output Example](examples/output.gif) -->
 
-(Credit: Good Mythical Morning)
+<! -- (Credit: Good Mythical Morning) -->

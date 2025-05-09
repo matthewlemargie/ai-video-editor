@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
-import time
+from time import time
 import re
 import ffmpeg
 
@@ -200,6 +200,7 @@ class TikTokEditor:
     # Create blend cache file for importing to blender
     # contains position of where to set frame for every frame in the video
     def prepare_for_blender(self, add_subtitles):
+        start_time = time()
         cap = cv2.VideoCapture(self.video_path)
 
         # Get video properties
@@ -226,7 +227,7 @@ class TikTokEditor:
                 box = (box[0] - new_width//2, box[0] + new_width//2)
                 boxes[id] = box
 
-            for i in tqdm(range(start, end + 1)):
+            for i in range(start, end + 1):
                 time_sec = (i - 1) / fps
 
                 # Determine current speaker
@@ -253,7 +254,6 @@ class TikTokEditor:
                     bbox = boxes.get(face_id)
                 else:
                     bbox = False
-                    print("no bbox")
 
                 if bbox:
                     x1, x2 = bbox
@@ -274,6 +274,8 @@ class TikTokEditor:
         blend = remove_duplicates(blend)
         with open(self.blend_path, "w") as f:
             json.dump(blend, f, indent=4)
+
+        print(f"blend.json for video was created in {time() - start_time:.2f}s")
 
         if add_subtitles:
             self.create_subtitles()
@@ -381,7 +383,8 @@ class TikTokEditor:
         # Step 1: Extract audio from the input video
         audio_file = "extracted_audio.aac"  # Temporary file for extracted audio
         extract_audio_command = [
-            'ffmpeg', '-i', self.video_path,  # Input video file
+            'ffmpeg', '-loglevel', 'quiet', 
+            '-i', self.video_path,  # Input video file
             '-vn',  # No video stream
             '-acodec', 'aac',  # Audio codec (AAC)
             '-strict', 'experimental',  # Allow experimental codecs
@@ -394,7 +397,8 @@ class TikTokEditor:
         
         # Step 2: Apply the extracted audio to the new video
         apply_audio_command = [
-            'ffmpeg', '-i', self.output_path,  # Input new video file
+            'ffmpeg', '-loglevel', 'quiet', 
+            '-i', self.output_path,  # Input new video file
             '-i', audio_file,  # Input extracted audio file
             '-c:v', 'copy',  # Copy video stream (no re-encoding)
             '-c:a', 'aac',  # Encode audio as AAC

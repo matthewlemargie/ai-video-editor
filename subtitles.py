@@ -16,7 +16,7 @@ def format_srt_time(seconds):
 
 # Extract audio from video
 def extract_audio(video_path, audio_path):
-    ffmpeg.input(video_path).output(audio_path, ac=1, ar='16000').run(overwrite_output=True)
+    ffmpeg.input(video_path).output(audio_path, ac=1, ar='16000').global_args('-loglevel', 'quiet').run(overwrite_output=True, quiet=True)
 
 
 # Generate word-by-word SRT
@@ -79,7 +79,7 @@ def generate_sentence_srt(video_path, srt_output):
     print("[1] Extracting audio...")
     extract_audio(video_path, audio_path)
 
-    print("[2] Transcribing with Whisper (word timestamps)...")
+    print("[2] Transcribing with Whisper (sentence timestamps)...")
     model = whisper.load_model("medium", device="cuda" if torch.cuda.is_available() else "cpu")
     result = model.transcribe(audio_path, word_timestamps=True, verbose=False)
     MAX_CHARS = 30

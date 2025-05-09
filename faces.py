@@ -1,22 +1,19 @@
 import cv2
 import numpy as np
-from facenet_pytorch import InceptionResnetV1, MTCNN
 from PIL import Image
-from sklearn.cluster import KMeans, AgglomerativeClustering, MeanShift
-from sklearn.metrics import silhouette_score
-from sklearn.metrics.pairwise import cosine_similarity
 import uuid
 import torch
 import os
 import math
 from tqdm import tqdm
 from time import time
-
 import threading
+from facenet_pytorch import InceptionResnetV1, MTCNN
+from sklearn.metrics.pairwise import cosine_similarity
 
 from framediff import is_shot_change
 
-MAX_BUF_LEN = 256
+MAX_BUF_LEN = 300
 
 def generate_id():
     return str(uuid.uuid4())[:8]
@@ -75,7 +72,12 @@ class FaceIDModel:
     # Get face detection bounding boxes from running mtcnn on self.buffer
     # Iterate through frames and faces and save embeddings and crops and positions
     def process_buffer(self):
+        s_full = time()
+        s = time()
         boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
+        mtcnn_time = time() - s
+        # print("mtcnn: ", mtcnn_time)
+        total_embedding_time = 0.0
         for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
             shot_flag, _, _, frame_idx, orig = self.buffer[idx]
             # Handle shot changes
@@ -96,6 +98,9 @@ class FaceIDModel:
                 continue
             norm = self._normalize(crops)
             with torch.no_grad():
+                s = time()
+                embedding_time = time() - s
+                total_embedding_time += embedding_time
                 embs = self.model(norm).cpu().numpy()
 
             # Add embeddings and ids to self.embed_db and self.position_db
@@ -112,6 +117,10 @@ class FaceIDModel:
                 self.position_db[fid] = (cnt + 1, xs + x_avg, ys + y_avg)
 
         self.buffer.clear()
+        e_full = time() - s_full
+        total_model_times = mtcnn_time + total_embedding_time
+        # print("models time: ", total_model_times)
+        # print("besides models: ", e_full - total_model_times)
 
     def _crop_faces(self, idx, boxes):
         crops, imgs, poses = [], [], []
@@ -210,6 +219,7 @@ class FaceIDModelMultithread:
         return (shot_change, pil, rgb, frame_idx, orig_frame)
 
     def send_to_buffer(self, frame_idx):
+        s = time()
         ret, frame = self.cap.read()
         if not ret:
             return False
@@ -226,10 +236,68 @@ class FaceIDModelMultithread:
         self.prev = frame
 
         self.buffer.append((shot_change, pil, rgb, frame_idx, frame))
+        print("send_to_buffer: ", time() - s)
         return True
 
     def process_buffer(self):
+        s = time()
         boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
+        print("mtcnn: ", time() - s)
+
+        all_crops = []
+        meta = []  # holds (frame_idx, face_idx, imgs[j], poses[j]) per face
+
+        for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
+            shot_flag, _, _, frame_idx, orig = self.buffer[idx]
+
+            # Handle shot change
+            if shot_flag:
+                start = self.last_change_frame
+                end = frame_idx - 1
+                if end >= start:
+                    self.shot_segments[(start, end)] = self.position_db.copy()
+                self.position_db.clear()
+                self.last_change_frame = frame_idx
+
+            if boxes is None:
+                continue
+
+            valid = [b for i, b in enumerate(boxes) if probs[i] > self.face_prob_threshold]
+            crops, imgs, poses = self._crop_faces(idx, valid)
+            if not crops:
+                continue
+
+            all_crops.extend(crops)
+            meta.extend([(frame_idx, imgs[j], poses[j]) for j in range(len(crops))])
+
+        if not all_crops:
+            self.buffer.clear()
+            return
+
+        # Run model in batch
+        norm = self._normalize(all_crops)
+        with torch.no_grad():
+            embs = self.model(norm).cpu().numpy()
+
+        # Associate embeddings back to metadata
+        for emb, (frame_idx, img, pose) in zip(embs, meta):
+            fid = self._find_match(emb) or generate_id()
+            x1, x2, y1, y2 = pose
+            x_avg = (x1 + x2) / 2
+            y_avg = (y1 + y2) / 2
+
+            if fid not in self.embed_db:
+                self.embed_db[fid] = (emb, cv2.resize(img, (112, 112)))
+
+            cnt, xs, ys = self.position_db.get(fid, (0, 0, 0))
+            self.position_db[fid] = (cnt + 1, xs + x_avg, ys + y_avg)
+
+        self.buffer.clear()
+
+    def process_buffer_old(self):
+        s = time()
+        boxes_list, probs_list = self.mtcnn.detect([x[1] for x in self.buffer])
+        print("mtcnn: ", time() - s)
         for idx, (boxes, probs) in enumerate(zip(boxes_list, probs_list)):
             shot_flag, _, _, frame_idx, orig = self.buffer[idx]
             # Handle shot change

@@ -52,6 +52,7 @@ class GUI:
 
 
     def match_faces_to_voices(self, face_db, speaker_segments):
+        print("Use GUI to match faces to speakers.")
         face_ids = face_db.keys()
         self.root.title("Speakers to Faces")
 

@@ -93,7 +93,7 @@ def add_audio_to_vse(scene, video_path):
         channel=1,
         frame_start=1
     )
-    audio_strip.volume  = 0.6
+    audio_strip.volume  = 0.2
     
 
 scene = bpy.context.scene

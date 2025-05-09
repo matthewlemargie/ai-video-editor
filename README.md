@@ -7,7 +7,7 @@ appropriate for TikTok/Instagram Reels/etc.
 The program uses a mix of speaker diarization, face embeddings,
 shot change tracking, and speech-to-text to edit videos.
 
-[Example usage and output](https://youtu.be/wWcMCVsQR04)
+[Example usage and output](https://youtu.be/zcGg5_8qJ4c)
 
 ## How to Use
 
@@ -15,20 +15,17 @@ Create conda environment with:
 
 `conda env create -f environment.yml`
 
-Then run main.py on a video specifying number of speakers and faces:
+Then run main.py on a video specifying number of speakers:
 
-`python main.py --video-path path/to/video.mp4 --n-speakers 2 --max-num-faces 2`
+`python main.py --video-path path/to/video.mp4 --n-speakers 2`
 
-Add tag `--add-subtitles` to output edited video with subtitles
+You may also set the face embedding threshold with the `--threshold` arg, e.g. `--threshold=0.4` 
 
-The output video can be found in the output directory
+Add tag `--add-subtitles` to create .srt file for video
 
-#<! -- ## Example -->
+Default subtitles are sentence subtitles. Run with `--word-timestamps` for each word subtitled individually.
 
-<! -- [Example output with audio](https://www.youtube.com/watch?v=e0QwOcsAZ28) -->
+Open Blender and run blender.py from Text Editor in Video Editing mode to import editing data for last video processed with main.py
 
-<! -- ![Input Example](examples/input.gif) -->
+You can now continue editing the video or export.
 
-<! -- ![Output Example](examples/output.gif) -->
-
-<! -- (Credit: Good Mythical Morning) -->

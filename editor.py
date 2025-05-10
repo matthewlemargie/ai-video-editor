@@ -199,7 +199,7 @@ class TikTokEditor:
 
     # Create blend cache file for importing to blender
     # contains position of where to set frame for every frame in the video
-    def prepare_for_blender(self, add_subtitles):
+    def prepare_for_blender(self, add_subtitles, new_subs):
         start_time = time()
         cap = cv2.VideoCapture(self.video_path)
 
@@ -276,6 +276,9 @@ class TikTokEditor:
             json.dump(blend, f, indent=4)
 
         print(f"blend.json for video was created in {time() - start_time:.2f}s")
+
+        if new_subs:
+            os.remove(self.subtitle_path)
 
         if add_subtitles:
             self.create_subtitles()

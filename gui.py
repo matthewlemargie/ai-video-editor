@@ -101,7 +101,7 @@ class GUI:
                                  label="Volume Control", variable=volume_var)
         volume_slider.pack(pady=10)
 
-        segments = sorted(speaker_segments, key=lambda x: x[0])
+        segments = sorted(speaker_segments, key=lambda x: x[1] - x[2])
 
         ids_done = set()
 

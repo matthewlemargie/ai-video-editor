@@ -113,7 +113,7 @@ class TikTokEditor:
 
     # Perform speaker diarization, face detection and embedding, 
     # and create gui for matching similar faces and matching faces to speakers
-    def analyze(self):
+    def analyze(self, redo_faces):
         # Perform speaker diarization on video or load diarization cache
         if os.path.exists(self.segments_path):
             with open(self.segments_path, "r") as f:
@@ -138,7 +138,7 @@ class TikTokEditor:
                 json.dump(stringify_keys(self.shot_segments), f, indent=4, default=make_json_serializable)
 
         # Open GUI for matching faces to speakers or load from cache
-        if os.path.exists(self.ids_dict_path):
+        if os.path.exists(self.ids_dict_path) and not redo_faces:
             with open(self.ids_dict_path, "r") as f:
                 self.ids_dict = json.load(f)
         else:
@@ -277,7 +277,7 @@ class TikTokEditor:
 
         print(f"blend.json for video was created in {time() - start_time:.2f}s")
 
-        if new_subs:
+        if new_subs and os.path.exists(self.subtitle_path):
             os.remove(self.subtitle_path)
 
         if add_subtitles:

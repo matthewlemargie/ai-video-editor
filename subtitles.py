@@ -22,8 +22,6 @@ def extract_audio(video_path, audio_path):
 # Generate word-by-word SRT
 def generate_word_srt(video_path, srt_output):
     s = time()
-    if os.path.exists(srt_output):
-        return
     audio_path = "temp_audio.wav"
 
     print("[1] Extracting audio...")
@@ -72,8 +70,6 @@ def split_into_lines(text, max_chars):
 
 def generate_sentence_srt(video_path, srt_output):
     start = time()
-    if os.path.exists(srt_output):
-        return
     audio_path = "temp_audio.wav"
 
     print("[1] Extracting audio...")

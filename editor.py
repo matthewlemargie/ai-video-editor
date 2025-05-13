@@ -69,16 +69,13 @@ def parse_keys_to_tuples(d):
 
 
 class TikTokEditor:
-    def __init__(self, video_path, n_speakers, embed_threshold, word_subtitles, delete_cache):
+    def __init__(self, video_path, delete_cache):
         # Ensure output and cache directories exist before using them
         os.makedirs("output", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
 
         self.video_path = video_path
         self.video_title = Path(video_path).stem
-        self.n_speakers = n_speakers
-        self.embed_threshold = embed_threshold
-        self.word_subtitles = word_subtitles
 
         # return frame rate fraction from ffmpeg probe
         probe = ffmpeg.probe(video_path)
@@ -99,6 +96,7 @@ class TikTokEditor:
         self.subtitle_path = os.path.join("cache", f"{self.video_title}.srt")
         self.face_db_path = os.path.join("cache", f"{self.video_title}_face_db.json")
         self.shots_path = os.path.join("cache", f"{self.video_title}_shots.json")
+        self.final_shots_path = os.path.join("cache", f"{self.video_title}_final_shots.json")
         self.ids_dict_path = os.path.join("cache", f"{self.video_title}_ids.json")
         self.ids_dict = {} # {speaker_id: face_id}
 
@@ -113,13 +111,13 @@ class TikTokEditor:
 
     # Perform speaker diarization, face detection and embedding, 
     # and create gui for matching similar faces and matching faces to speakers
-    def analyze(self, redo_faces):
+    def analyze(self, n_speakers, embed_threshold, redo_faces):
         # Perform speaker diarization on video or load diarization cache
         if os.path.exists(self.segments_path):
             with open(self.segments_path, "r") as f:
                 self.speaker_segments = json.load(f)
         else:
-            self.speaker_segments = diarize(self.video_path, n_speakers=self.n_speakers)
+            self.speaker_segments = diarize(self.video_path, n_speakers=n_speakers)
             with open(self.segments_path, "w") as f:
                 json.dump(self.speaker_segments, f, indent=4, default=convert_to_serializable)
 
@@ -131,7 +129,7 @@ class TikTokEditor:
             with open(self.shots_path, "r") as f:
                 self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
-            self.face_db, self.shot_segments = FaceIDModel(self.video_path, embed_threshold=self.embed_threshold).run()
+            self.face_db, self.shot_segments = FaceIDModel(self.video_path, embed_threshold=embed_threshold).run()
             with open(self.face_db_path, "w") as f:
                 json.dump(self.face_db, f, indent=4, default=convert_to_serializable)
             with open(self.shots_path, "w") as f:
@@ -141,13 +139,15 @@ class TikTokEditor:
         if os.path.exists(self.ids_dict_path) and not redo_faces:
             with open(self.ids_dict_path, "r") as f:
                 self.ids_dict = json.load(f)
+            with open(self.final_shots_path, "r") as f:
+                self.shot_segments = parse_keys_to_tuples(json.load(f))
         else:
             self.gui = GUI(self.video_path)
             self.gui.match_faces_to_voices(self.face_db, self.speaker_segments)
             self.combine_speakers_faces()
             with open(self.ids_dict_path, "w") as f:
                 json.dump(self.ids_dict, f, indent=4)
-            with open(self.shots_path, "w") as f:
+            with open(self.final_shots_path, "w") as f:
                 json.dump(stringify_keys(self.shot_segments), f, indent=4, default=make_json_serializable)
 
 
@@ -185,8 +185,8 @@ class TikTokEditor:
             self.shot_segments[segment] = new_db
 
 
-    def create_subtitles(self):
-        if self.word_subtitles:
+    def create_subtitles(self, word_subtitles):
+        if word_subtitles:
             generate_word_srt(self.video_path, self.subtitle_path)
         else:
             generate_sentence_srt(self.video_path, self.subtitle_path)
@@ -199,7 +199,7 @@ class TikTokEditor:
 
     # Create blend cache file for importing to blender
     # contains position of where to set frame for every frame in the video
-    def prepare_for_blender(self, add_subtitles, new_subs):
+    def prepare_for_blender(self):
         start_time = time()
         cap = cv2.VideoCapture(self.video_path)
 
@@ -276,15 +276,6 @@ class TikTokEditor:
             json.dump(blend, f, indent=4)
 
         print(f"blend.json for video was created in {time() - start_time:.2f}s")
-
-        if new_subs and os.path.exists(self.subtitle_path):
-            os.remove(self.subtitle_path)
-
-        if add_subtitles:
-            self.create_subtitles()
-
-
-
 
 
 
